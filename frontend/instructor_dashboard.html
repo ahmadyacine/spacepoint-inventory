@@ -57,15 +57,13 @@
             transform: translateX(100%);
             opacity: 0;
         }
-
-        .toast.show {
-            transform: translateX(0);
-            opacity: 1;
-        }
     </style>
     <script>
-        const API_BASE_url = "http://127.0.0.1:8000";
-        const WS_BASE_URL = "ws://127.0.0.1:8000";
+        const API_BASE_url = "";
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const host = window.location.host;
+        const WS_BASE_URL = `${protocol}//${host}`;
+
         let currentUser = null;
         let currentInstructorId = null;
         let cubesatsData = [];
@@ -151,7 +149,6 @@
                     console.log(`WebSocket connection closed cleanly, code=${event.code} reason=${event.reason}`);
                 } else {
                     console.log('WebSocket connection died');
-                    // Try to reconnect after 5 seconds
                     setTimeout(connectWebSocket, 5000);
                 }
             };
@@ -162,10 +159,7 @@
         }
 
         function handleNewReceipt(data) {
-            // Show toast notification
             showToast(data.notification.title, data.notification.message);
-
-            // Reload notifications to show the new one
             loadNotifications();
         }
 
@@ -173,22 +167,8 @@
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = 'toast show bg-white border-l-4 border-purple-600 shadow-lg rounded-r-lg p-4 mb-4 flex items-start gap-3 min-w-[300px]';
-            toast.innerHTML = `
-                <div class="text-purple-600 mt-0.5">
-                    <i class="fa-solid fa-bell"></i>
-                </div>
-                <div>
-                    <h4 class="font-semibold text-gray-900 text-sm">${title}</h4>
-                    <p class="text-sm text-gray-600 mt-1">${message}</p>
-                </div>
-                <button onclick="this.parentElement.remove()" class="ml-auto text-gray-400 hover:text-gray-600">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            `;
-
+            toast.innerHTML = `<div class="text-purple-600 mt-0.5"><i class="fa-solid fa-bell"></i></div><div><h4 class="font-semibold text-gray-900 text-sm">${title}</h4><p class="text-sm text-gray-600 mt-1">${message}</p></div><button onclick="this.parentElement.remove()" class="ml-auto text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark"></i></button>`;
             container.appendChild(toast);
-
-            // Remove after 5 seconds
             setTimeout(() => {
                 toast.classList.remove('show');
                 setTimeout(() => toast.remove(), 300);
@@ -202,21 +182,15 @@
             sessionStorage.removeItem("instructor_id");
             sessionStorage.removeItem("user_id");
             sessionStorage.removeItem("user");
-            if (socket) {
-                socket.close();
-            }
+            if (socket) { socket.close(); }
         }
 
         function formatDateTime(dateStr) {
             if (!dateStr) return "N/A";
             const date = new Date(dateStr);
             return date.toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: 'numeric', minute: '2-digit', hour12: true
             });
         }
 
@@ -230,7 +204,7 @@
                 'deployed': 'bg-indigo-100 text-indigo-800',
                 'retired': 'bg-red-100 text-red-800'
             };
-            return `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles['concept']}`;
+            return `<inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles['concept']}`;
         }
 
         async function loadCubesats() {
@@ -241,8 +215,6 @@
 
             try {
                 const data = await apiFetch("/cubesats/");
-
-                // Filter cubesats for this instructor
                 const myCubesats = data.filter(c => c.instructor_id === currentInstructorId);
                 cubesatsData = myCubesats;
 
@@ -255,11 +227,9 @@
                 myCubesats.forEach((c) => {
                     const tr = document.createElement("tr");
                     tr.className = "border-b border-gray-100 transition-all table-row-hover";
-
                     const location = c.location || '<span class="text-gray-400 italic">Not set</span>';
                     const delivered = c.received_date ? new Date(c.received_date).toLocaleDateString() : '<span class="text-gray-400 italic">Pending</span>';
 
-                    // Calculate missing items
                     let missing = [];
                     const required = {
                         structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
@@ -278,35 +248,16 @@
                         }
                     }
 
-                    const missingDisplay = missing.length > 0
-                        ? `<button onclick="openMissingItemsModal(${c.id})" class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 hover:bg-red-100 transition-colors">
-                             <i class="fa-solid fa-triangle-exclamation"></i> ${missing.length} Missing
-                           </button>`
-                        : `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
-                             <i class="fa-solid fa-check"></i> Complete
-                           </span>`;
+                    const missingDisplay = missing.length > 0 ?
+                        `<button onclick="openMissingItemsModal(${c.id})" class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 hover:bg-red-100 transition-colors"><i class="fa-solid fa-triangle-exclamation"></i> ${missing.length} Missing</button>` :
+                        `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100"><i class="fa-solid fa-check"></i> Complete</span>`;
 
-                    tr.innerHTML = `
-                        <td class="px-6 py-4 text-sm font-medium text-gray-900">#${c.id}</td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm font-medium text-gray-900">${c.name || "-"}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="${statusBadge(c.status)}">
-                                <i class="fa-solid fa-circle text-[8px]"></i>
-                                <span class="capitalize">${c.status}</span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm text-gray-700">${location}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm text-gray-700">${delivered}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            ${missingDisplay}
-                        </td>
-                    `;
+                    tr.innerHTML = `<td class="px-6 py-4 text-sm font-medium text-gray-900">#${c.id}</td>
+                        <td class="px-6 py-4"><div class="text-sm font-medium text-gray-900">${c.name || "-"}</div></td>
+                        <td class="px-6 py-4"><div class="${statusBadge(c.status)}"><i class="fa-solid fa-circle text-[8px]"></i> <span class="capitalize">${c.status}</span></div></td>
+                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${location}</div></td>
+                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${delivered}</div></td>
+                        <td class="px-6 py-4">${missingDisplay}</td>`;
                     tbody.appendChild(tr);
                 });
             } catch (err) {
@@ -323,7 +274,6 @@
             const modalBody = document.getElementById('missingItemsBody');
             document.getElementById('missingItemsTitle').textContent = `Missing Items: ${cubesat.name}`;
 
-            // Calculate missing items again for the modal
             let missing = [];
             const required = {
                 structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
@@ -345,27 +295,10 @@
             if (missing.length === 0) {
                 modalBody.innerHTML = '<p class="text-green-600 font-medium text-center">No missing items!</p>';
             } else {
-                modalBody.innerHTML = missing.map(item => `
-                    <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600">
-                                <i class="fa-solid fa-triangle-exclamation text-sm"></i>
-                            </div>
-                            <div>
-                                <p class="font-medium text-gray-900 capitalize">${item.name}</p>
-                                <p class="text-xs text-red-600">Required: ${item.required}</p>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <span class="block text-lg font-bold text-red-700">${item.current}</span>
-                            <span class="text-xs text-red-500">Current</span>
-                        </div>
-                    </div>
-                `).join('');
+                modalBody.innerHTML = missing.map(item => `<div class="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><i class="fa-solid fa-triangle-exclamation text-sm"></i></div><div><p class="font-medium text-gray-900 capitalize">${item.name}</p><p class="text-xs text-red-600">Required: ${item.required}</p></div></div><div class="text-right"><span class="block text-lg font-bold text-red-700">${item.current}</span><span class="text-xs text-red-500">Current</span></div></div>`).join('');
             }
 
             modal.classList.remove('hidden');
-            // Trigger reflow
             void modal.offsetWidth;
             modal.classList.add('open');
         }
@@ -373,9 +306,7 @@
         function closeMissingItemsModal() {
             const modal = document.getElementById('missingItemsModal');
             modal.classList.remove('open');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 300);
+            setTimeout(() => { modal.classList.add('hidden'); }, 300);
         }
 
         async function loadWorkshops() {
@@ -386,13 +317,7 @@
 
             try {
                 const workshops = await apiFetch("/workshops/");
-
-                // Filter workshops assigned to this instructor and are upcoming/in progress
-                const instructorWorkshops = workshops.filter(w =>
-                    w.instructor_id === currentInstructorId &&
-                    (w.status === 'upcoming' || w.status === 'in_progress')
-                ).sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-
+                const instructorWorkshops = workshops.filter(w => w.instructor_id === currentInstructorId && (w.status === 'upcoming' || w.status === 'in_progress')).sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
                 workshopsData = instructorWorkshops;
 
                 if (!instructorWorkshops.length) {
@@ -404,40 +329,13 @@
                 instructorWorkshops.forEach((w) => {
                     const tr = document.createElement("tr");
                     tr.className = "border-b border-gray-100 transition-all table-row-hover";
-
                     const startDate = formatDateTime(w.start_date);
 
-                    tr.innerHTML = `
-                        <td class="px-6 py-4">
-                            <div class="text-sm font-medium text-gray-900">${w.title}</div>
-                            <div class="mt-1">
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium 
-                                    ${w.workshop_type === 'demo' ? 'bg-purple-100 text-purple-800' :
-                            w.workshop_type === 'online' ? 'bg-blue-100 text-blue-800' :
-                                w.workshop_type === 'hands_on' ? 'bg-green-100 text-green-800' :
-                                    'bg-amber-100 text-amber-800'}">
-                                    ${w.workshop_type.replace('_', ' ')}
-                                </span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm text-gray-700">${startDate}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm text-gray-700">${w.location || "TBD"}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm text-gray-700">
-                                ${w.current_participants} / ${w.max_participants || '∞'}
-                            </div>
-                        </td>
-                        <td class="px-6 py-4 text-right">
-                            <button onclick="openWorkshopModal(${w.id})" 
-                                class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">
-                                View Details
-                            </button>
-                        </td>
-                    `;
+                    tr.innerHTML = `<td class="px-6 py-4"><div class="text-sm font-medium text-gray-900">${w.title}</div><div class="mt-1"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${w.workshop_type === 'demo' ? 'bg-purple-100 text-purple-800' : w.workshop_type === 'online' ? 'bg-blue-100 text-blue-800' : w.workshop_type === 'hands_on' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}">${w.workshop_type.replace('_', ' ')}</span></div></td>
+                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${startDate}</div></td>
+                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${w.location || "TBD"}</div></td>
+                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${w.current_participants} / ${w.max_participants || '∞'}</div></td>
+                        <td class="px-6 py-4 text-right"><button onclick="openWorkshopModal(${w.id})" class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">View Details</button></td>`;
                     tbody.appendChild(tr);
                 });
             } catch (err) {
@@ -453,12 +351,10 @@
             document.getElementById('modalTitle').textContent = workshop.title;
             document.getElementById('modalType').textContent = workshop.workshop_type.replace('_', ' ');
             document.getElementById('modalStatus').textContent = workshop.status.replace('_', ' ');
-
             document.getElementById('modalDescription').textContent = workshop.description || "No description provided.";
             document.getElementById('modalLocation').textContent = workshop.location || "TBD";
             document.getElementById('modalDate').textContent = `${formatDateTime(workshop.start_date)} - ${formatDateTime(workshop.end_date)}`;
             document.getElementById('modalParticipants').textContent = `${workshop.current_participants} / ${workshop.max_participants || '∞'}`;
-
             document.getElementById('modalRequirements').textContent = workshop.requirements || "No specific requirements.";
             document.getElementById('modalNotes').textContent = workshop.notes || "No additional notes.";
 
@@ -471,9 +367,7 @@
         function closeWorkshopModal() {
             const modal = document.getElementById('workshopModal');
             modal.classList.remove('open');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 300);
+            setTimeout(() => { modal.classList.add('hidden'); }, 300);
         }
 
         async function loadNotifications() {
@@ -494,7 +388,6 @@
                 notifications.forEach(n => {
                     const tr = document.createElement("tr");
                     tr.className = `border-b border-gray-100 transition-all table-row-hover ${!n.is_read ? 'bg-purple-50' : ''}`;
-
                     const date = formatDateTime(n.created_at);
 
                     let actionBtn = '';
@@ -503,12 +396,7 @@
                     let titleClass = 'text-sm text-gray-900 font-medium';
 
                     if (n.type === 'receipt_approval' && !n.is_read) {
-                        actionBtn = `
-                            <button onclick="openReceiptModal(${n.related_entity_id}, ${n.id}); event.stopPropagation();" 
-                                class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">
-                                Review & Approve
-                            </button>
-                        `;
+                        actionBtn = `<button onclick="openReceiptModal(${n.related_entity_id}, ${n.id}); event.stopPropagation();" class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">Review & Approve</button>`;
                         rowClickAttr = `onclick="openReceiptModal(${n.related_entity_id}, ${n.id})"`;
                         cursorStyle = 'cursor: pointer;';
                         titleClass += ' hover:text-purple-600 transition-colors';
@@ -516,23 +404,10 @@
                         actionBtn = `<span class="text-green-600 text-sm"><i class="fa-solid fa-check"></i> Approved</span>`;
                     }
 
-                    tr.innerHTML = `
-                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}">
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 capitalize">
-                                ${n.type.replace('_', ' ')}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}">
-                            <div class="${titleClass}">${n.title}</div>
-                            <div class="text-sm text-gray-500">${n.message}</div>
-                        </td>
-                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}">
-                            <div class="text-sm text-gray-500">${date}</div>
-                        </td>
-                        <td class="px-6 py-4 text-right">
-                            ${actionBtn}
-                        </td>
-                    `;
+                    tr.innerHTML = `<td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 capitalize">${n.type.replace('_', ' ')}</span></td>
+                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}"><div class="${titleClass}">${n.title}</div><div class="text-sm text-gray-500">${n.message}</div></td>
+                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}"><div class="text-sm text-gray-500">${date}</div></td>
+                        <td class="px-6 py-4 text-right">${actionBtn}</td>`;
                     tbody.appendChild(tr);
                 });
             } catch (err) {
@@ -550,7 +425,6 @@
 
             try {
                 const receipt = await apiFetch(`/receipts/${receiptId}`);
-
                 document.getElementById('receiptId').textContent = `#${receipt.id}`;
                 document.getElementById('receiptDate').textContent = formatDateTime(receipt.created_at);
                 document.getElementById('receiptCubesat').textContent = receipt.cubesat_name;
@@ -558,15 +432,12 @@
 
                 const itemsList = document.getElementById('receiptItems');
                 itemsList.innerHTML = '';
-
                 const items = JSON.parse(receipt.items);
+
                 Object.entries(items).forEach(([key, value]) => {
                     const li = document.createElement('li');
                     li.className = 'flex justify-between text-sm';
-                    li.innerHTML = `
-                        <span class="text-gray-700 capitalize">${key.replace(/_/g, ' ')}</span>
-                        <span class="font-bold text-gray-900">${value} units</span>
-                    `;
+                    li.innerHTML = `<span class="text-gray-700 capitalize">${key.replace(/_/g, ' ')}</span><span class="font-bold text-gray-900">${value} units</span>`;
                     itemsList.appendChild(li);
                 });
 
@@ -581,10 +452,8 @@
                 modal.classList.remove('hidden');
                 void modal.offsetWidth;
                 modal.classList.add('open');
-
             } catch (error) {
                 console.error('Error loading receipt details:', error);
-                // showNotification('Failed to load receipt details', 'error');
             }
         }
 
@@ -602,18 +471,12 @@
             if (!currentReceiptId) return;
 
             try {
-                await apiFetch(`/receipts/${currentReceiptId}/approve`, {
-                    method: 'PUT'
-                });
-
-                // showNotification('Receipt approved successfully', 'success');
+                await apiFetch(`/receipts/${currentReceiptId}/approve`, { method: 'PUT' });
                 closeReceiptModal();
-                loadNotifications(); // Reload to update status
-                loadCubesats(); // Reload to show new CubeSat
-
+                loadNotifications();
+                loadCubesats();
             } catch (error) {
                 console.error('Error approving receipt:', error);
-                // showNotification(error.message || 'Failed to approve receipt', 'error');
             }
         }
 
@@ -642,11 +505,9 @@
 <body class="bg-gray-50 min-h-screen flex">
     <!-- Mobile menu button -->
     <div class="lg:hidden fixed top-4 left-4 z-50">
-        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
-            <i class="fa-solid fa-bars"></i>
-        </button>
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white"><i
+                class="fa-solid fa-bars"></i></button>
     </div>
-
     <!-- Sidebar Navigation -->
     <div id="sidebar"
         class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col -translate-x-full lg:translate-x-0">
@@ -656,46 +517,34 @@
                 <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
             </div>
         </div>
-
         <!-- User Info -->
         <div class="p-4 border-b border-gray-200">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                    <i class="fa-solid fa-user-graduate text-purple-600"></i>
-                </div>
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center"><i
+                        class="fa-solid fa-user-graduate text-purple-600"></i></div>
                 <div>
                     <p class="font-medium text-gray-900">Instructor</p>
-                    <p class="text-xs text-gray-500">
-                        Role: <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
-                    </p>
+                    <p class="text-xs text-gray-500">Role: <span id="mobile-user-role"
+                            class="font-semibold text-purple-600 capitalize"></span></p>
                 </div>
             </div>
         </div>
-
         <!-- Main Navigation -->
         <nav class="flex-1 p-4 space-y-2">
             <a href="instructor_dashboard.html"
-                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
-                <i class="fa-solid fa-gauge-high w-5"></i>
-                <span>Dashboard</span>
-            </a>
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold"><i
+                    class="fa-solid fa-gauge-high w-5"></i><span>Dashboard</span></a>
             <a href="notifications.html"
-                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                <i class="fa-solid fa-bell w-5"></i>
-                <span>Notifications</span>
-            </a>
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"><i
+                    class="fa-solid fa-bell w-5"></i><span>Notifications</span></a>
         </nav>
-
         <!-- Logout Section -->
         <div class="p-4 border-t border-gray-200">
             <button onclick="logout()"
-                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                <i class="fa-solid fa-right-from-bracket w-5"></i>
-                <span>Logout</span>
-            </button>
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><i
+                    class="fa-solid fa-right-from-bracket w-5"></i><span>Logout</span></button>
         </div>
     </div>
-
     <!-- Main Content -->
     <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
         <!-- Header -->
@@ -714,18 +563,14 @@
                 </div>
             </div>
         </header>
-
         <!-- Content Area -->
         <div class="flex-1 p-6 space-y-8 max-w-7xl mx-auto w-full">
-
             <!-- Notifications Section -->
             <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div
                     class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white flex justify-between items-center">
-                    <h2 class="text-lg font-semibold flex items-center gap-2">
-                        <i class="fa-solid fa-bell"></i>
-                        Notifications
-                    </h2>
+                    <h2 class="text-lg font-semibold flex items-center gap-2"><i
+                            class="fa-solid fa-bell"></i>Notifications</h2>
                 </div>
                 <div class="overflow-x-auto custom-scrollbar">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -752,15 +597,12 @@
                 </div>
                 <div id="notifications-empty" class="flex items-center justify-center h-32 text-gray-500"></div>
             </section>
-
             <!-- Upcoming Workshops Section -->
             <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div
                     class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white flex justify-between items-center">
-                    <h2 class="text-lg font-semibold flex items-center gap-2">
-                        <i class="fa-solid fa-calendar-days"></i>
-                        Upcoming Workshops
-                    </h2>
+                    <h2 class="text-lg font-semibold flex items-center gap-2"><i
+                            class="fa-solid fa-calendar-days"></i>Upcoming Workshops</h2>
                 </div>
                 <div class="overflow-x-auto custom-scrollbar">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -790,14 +632,11 @@
                 </div>
                 <div id="workshops-empty" class="flex items-center justify-center h-32 text-gray-500"></div>
             </section>
-
             <!-- Your CubeSats Section -->
             <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white">
-                    <h2 class="text-lg font-semibold flex items-center gap-2">
-                        <i class="fa-solid fa-cubes-stacked"></i>
-                        Your CubeSats
-                    </h2>
+                    <h2 class="text-lg font-semibold flex items-center gap-2"><i
+                            class="fa-solid fa-cubes-stacked"></i>Your CubeSats</h2>
                 </div>
                 <div class="overflow-x-auto custom-scrollbar">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -832,12 +671,8 @@
             </section>
         </div>
     </div>
-
     <!-- Toast Container -->
-    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col items-end pointer-events-none">
-        <!-- Toasts will be injected here -->
-    </div>
-
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col items-end pointer-events-none"></div>
     <!-- Workshop Details Modal -->
     <div id="workshopModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm" onclick="closeWorkshopModal()"></div>
@@ -853,9 +688,8 @@
                             class="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 capitalize"></span>
                     </div>
                 </div>
-                <button onclick="closeWorkshopModal()" class="text-gray-400 hover:text-gray-500 transition-colors">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <button onclick="closeWorkshopModal()" class="text-gray-400 hover:text-gray-500 transition-colors"><i
+                        class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             <div class="p-6 space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -872,17 +706,14 @@
                         <p id="modalParticipants" class="text-gray-900"></p>
                     </div>
                 </div>
-
                 <div>
                     <h4 class="text-sm font-medium text-gray-500 mb-1">Description</h4>
                     <p id="modalDescription" class="text-gray-700 leading-relaxed"></p>
                 </div>
-
                 <div>
                     <h4 class="text-sm font-medium text-gray-500 mb-1">Requirements</h4>
                     <p id="modalRequirements" class="text-gray-700"></p>
                 </div>
-
                 <div>
                     <h4 class="text-sm font-medium text-gray-500 mb-1">Notes</h4>
                     <p id="modalNotes" class="text-gray-700 italic"></p>
@@ -890,35 +721,27 @@
             </div>
             <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
                 <button onclick="closeWorkshopModal()"
-                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">
-                    Close
-                </button>
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">Close</button>
             </div>
         </div>
     </div>
-
     <!-- Missing Items Modal -->
     <div id="missingItemsModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm" onclick="closeMissingItemsModal()"></div>
         <div class="modal-content bg-white rounded-xl shadow-2xl w-full max-w-md m-4 relative z-10">
             <div class="p-6 border-b border-gray-200 flex justify-between items-center">
                 <h3 id="missingItemsTitle" class="text-lg font-bold text-gray-900">Missing Items</h3>
-                <button onclick="closeMissingItemsModal()" class="text-gray-400 hover:text-gray-500 transition-colors">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <button onclick="closeMissingItemsModal()"
+                    class="text-gray-400 hover:text-gray-500 transition-colors"><i
+                        class="fa-solid fa-xmark text-xl"></i></button>
             </div>
-            <div id="missingItemsBody" class="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
-                <!-- Missing items will be injected here -->
-            </div>
+            <div id="missingItemsBody" class="p-6 space-y-3 max-h-[60vh] overflow-y-auto"></div>
             <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
                 <button onclick="closeMissingItemsModal()"
-                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">
-                    Close
-                </button>
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">Close</button>
             </div>
         </div>
     </div>
-
     <!-- Receipt Details Modal -->
     <div id="receiptModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm" onclick="closeReceiptModal()"></div>
@@ -929,9 +752,8 @@
                     <h3 class="text-lg font-bold text-purple-900">Receipt Details</h3>
                     <p id="receiptId" class="text-sm text-purple-700"></p>
                 </div>
-                <button onclick="closeReceiptModal()" class="text-gray-400 hover:text-gray-500 transition-colors">
-                    <i class="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <button onclick="closeReceiptModal()" class="text-gray-400 hover:text-gray-500 transition-colors"><i
+                        class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             <div class="p-6 space-y-4">
                 <div class="grid grid-cols-2 gap-4 text-sm">
@@ -950,24 +772,18 @@
                 </div>
                 <div class="border-t border-gray-100 pt-4">
                     <h4 class="font-semibold text-gray-900 mb-3">Items to Receive</h4>
-                    <ul id="receiptItems" class="space-y-2 bg-gray-50 p-4 rounded-lg">
-                        <!-- Items will be injected here -->
-                    </ul>
+                    <ul id="receiptItems" class="space-y-2 bg-gray-50 p-4 rounded-lg"></ul>
                 </div>
             </div>
             <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
                 <button onclick="closeReceiptModal()"
-                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">
-                    Close
-                </button>
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">Close</button>
                 <button id="approveReceiptBtn" onclick="approveReceipt()"
-                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors shadow-sm flex items-center gap-2">
-                    <i class="fa-solid fa-check"></i> Approve Receipt
-                </button>
+                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors shadow-sm flex items-center gap-2"><i
+                        class="fa-solid fa-check"></i>Approve Receipt</button>
             </div>
         </div>
     </div>
-
     <!-- Overlay for mobile sidebar -->
     <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
     </div>

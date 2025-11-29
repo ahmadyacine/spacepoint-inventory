@@ -40,7 +40,7 @@ def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
-    # جدول instructors
+    # Table instructors
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS instructors (
@@ -53,7 +53,7 @@ def init_db():
         """
     )
 
-    # جدول users - UPDATED to include instructor_id
+    # Table users - UPDATED to include instructor_id
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -62,13 +62,13 @@ def init_db():
             password TEXT NOT NULL,
             full_name TEXT NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('admin', 'operations', 'instructor')),
-            instructor_id INTEGER REFERENCES instructors(id),  -- NEW COLUMN
+            instructor_id INTEGER REFERENCES instructors(id),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
     )
 
-    # جدول cubesats
+    # Table cubesats
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS cubesats (
@@ -103,7 +103,7 @@ def init_db():
         """
     )
 
-    # جدول workshops
+    # Table workshops
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS workshops (
@@ -126,7 +126,7 @@ def init_db():
         """
     )
 
-    # جدول receipts
+    # Table receipts
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS receipts (
@@ -141,7 +141,7 @@ def init_db():
         """
     )
 
-    # جدول notifications
+    # Table notifications
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS notifications (

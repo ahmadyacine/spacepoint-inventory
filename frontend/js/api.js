@@ -1,5 +1,5 @@
 // frontend/js/api.js
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = ""; // Use relative path for production deployment
 
 function getToken() {
     return sessionStorage.getItem("token");
@@ -17,12 +17,19 @@ function getInstructorId() {
     return sessionStorage.getItem("instructor_id");
 }
 
-function setAuth(token, role, username, instructorId = null) {
+function getUserId() {
+    return sessionStorage.getItem("user_id");
+}
+
+function setAuth(token, role, username, instructorId = null, userId = null) {
     sessionStorage.setItem("token", token);
     sessionStorage.setItem("role", role);
     sessionStorage.setItem("username", username);
     if (instructorId) {
         sessionStorage.setItem("instructor_id", instructorId);
+    }
+    if (userId) {
+        sessionStorage.setItem("user_id", userId);
     }
 }
 
@@ -31,6 +38,7 @@ function clearAuth() {
     sessionStorage.removeItem("role");
     sessionStorage.removeItem("username");
     sessionStorage.removeItem("instructor_id");
+    sessionStorage.removeItem("user_id");
 }
 
 async function apiFetch(path, options = {}) {
