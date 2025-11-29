@@ -1,3 +1,44 @@
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    DB_HOST = os.getenv("DATABASE_HOSTNAME", "localhost")
+    DB_PORT = os.getenv("DATABASE_PORT", "5432")
+    DB_NAME = os.getenv("DATABASE_NAME", "spacepoint_inventory")
+    DB_USER = os.getenv("DATABASE_USERNAME", "postgres")
+    DB_PASS = os.getenv("DATABASE_PASSWORD", "postgres")
+    DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+# SQLAlchemy Setup
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+
+SQLALCHEMY_DATABASE_URL = DATABASE_URL
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+
+def get_connection():
+    conn = psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=RealDictCursor,
+    )
+    return conn
+
+
+def init_db():
+    conn = get_connection()
+    cur = conn.cursor()
 
     # جدول instructors
     cur.execute(
@@ -56,7 +97,8 @@
             m3_6mm INTEGER DEFAULT 0,
             iscomplete BOOLEAN DEFAULT FALSE,
             missingitems TEXT,
-            is_received BOOLEAN DEFAULT FALSE
+            is_received BOOLEAN DEFAULT FALSE,
+            received_date DATE
         );
         """
     )
