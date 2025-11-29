@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Add Cubesat – SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+    </style>
+    <script defer>
+        function ensureAuth() {
+            const token = getToken();
+            const role = getRole();
+            if (!token || (role !== "admin" && role !== "operations")) {
+                window.location.href = "login.html";
+            } else {
+                const userRoleEl = document.getElementById("user-role");
+                const mobileUserRoleEl = document.getElementById("mobile-user-role");
+                if (userRoleEl) userRoleEl.textContent = role;
+                if (mobileUserRoleEl) mobileUserRoleEl.textContent = role;
+
+                // Hide user management features for non-admin users
+                if (role !== "admin") {
+                    const userElements = document.querySelectorAll('[data-admin-only]');
+                    userElements.forEach(el => el.style.display = 'none');
+                }
+            }
+        }
+
+        async function saveCubesat(event) {
+            event.preventDefault();
+            const msgEl = document.getElementById("msg");
+            const submitBtn = document.getElementById("submitBtn");
+            const originalBtnContent = submitBtn.innerHTML;
+
+            msgEl.textContent = "";
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Saving...</span>`;
+
+            const form = event.target;
+            const fd = new FormData(form);
+            const body = {};
+
+            fd.forEach((value, key) => {
+                const numericFields = [
+                    "structures", "current_sensors", "temp_sensors", "fram", "sd_card",
+                    "reaction_wheel", "mpu", "gps", "motor_driver",
+                    "phillips_screwdriver", "screw_gauge_3d", "standoff_tool_3d",
+                    "m3_10mm", "m3_10mm_thread", "m3_9mm_thread", "m3_20mm_thread", "m3_6mm"
+                ];
+
+                if (numericFields.includes(key)) {
+                    body[key] = Number(value || 0);
+                } else if (key === "delivered_date" && value) {
+                    body[key] = value; // yyyy-mm-dd
+                } else if (key === "instructor_id" && value) {
+                    body[key] = Number(value);
+                } else {
+                    body[key] = value;
+                }
+            });
+
+            try {
+                const res = await apiFetch("/cubesats/", {
+                    method: "POST",
+                    body: JSON.stringify(body),
+                });
+
+                msgEl.textContent = "✅ Cubesat added successfully. Redirecting...";
+                msgEl.className = "text-green-600 text-sm mt-2";
+
+                setTimeout(() => {
+                    window.location.href = "cubesats_list.html";
+                }, 1500);
+
+            } catch (err) {
+                msgEl.textContent = "Error: " + err.message;
+                msgEl.className = "text-red-600 text-sm mt-2";
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnContent;
+            }
+        }
+
+        async function loadInstructors() {
+            try {
+                const instructors = await apiFetch("/instructors/");
+                const select = document.querySelector("select[name='instructor_id']");
+
+                // Clear existing options except the default one
+                select.innerHTML = '<option value="">Select Instructor (Optional)</option>';
+
+                instructors.forEach(inst => {
+                    const option = document.createElement("option");
+                    option.value = inst.id;
+                    option.textContent = `${inst.name} (ID: ${inst.id})`;
+                    select.appendChild(option);
+                });
+            } catch (err) {
+                console.error("Failed to load instructors:", err);
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadInstructors();
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Add Cubesat</h1>
+                        <p class="text-sm text-gray-500 mt-1">Register a new CubeSat kit and fill its checklist.</p>
+                    </div>
+                    <div class="hidden lg:flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span id="user-role"
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content -->
+        <main class="flex-1 p-6">
+            <div class="flex justify-end mb-4">
+                <a href="cubesats_list.html"
+                    class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-[#4f3069] text-white text-sm">
+                    <i class="fa-solid fa-cubes"></i>
+                    <span>View Cubesats</span>
+                </a>
+            </div>
+
+            <form onsubmit="saveCubesat(event)"
+                class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6 text-sm">
+
+                <!-- General info -->
+                <section class="space-y-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2 text-gray-900 border-b pb-2">
+                        <i class="fa-solid fa-circle-info text-purple-600"></i>
+                        General Information
+                    </h2>
+                    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Cubesat Name</label>
+                            <input name="name" required
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Status</label>
+                            <select name="status"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors bg-white">
+                                <option value="working">Working</option>
+                                <option value="damaged">Damaged</option>
+                                <option value="repeating">Repeating</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Location (UAE)</label>
+                            <select name="location"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors bg-white">
+                                <option value="">Select location</option>
+                                <option value="Ajman">Ajman</option>
+                                <option value="Sharjah">Sharjah</option>
+                                <option value="Dubai">Dubai</option>
+                                <option value="Abu Dhabi">Abu Dhabi</option>
+                                <option value="Ras Al Khaimah">Ras Al Khaimah</option>
+                                <option value="Umm Al Quwain">Umm Al Quwain</option>
+                                <option value="Fujairah">Fujairah</option>
+                                <option value="Al Ain">Al Ain</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Delivered Date</label>
+                            <input type="date" name="delivered_date"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Instructor</label>
+                            <select name="instructor_id"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors bg-white">
+                                <option value="">Loading...</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Checklist -->
+                <section class="space-y-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2 text-gray-900 border-b pb-2">
+                        <i class="fa-solid fa-list-check text-purple-600"></i>
+                        Checklist Items
+                    </h2>
+                    <p class="text-sm text-gray-500">
+                        Enter how many of each item are inside this CubeSat kit. System will compare against the
+                        required
+                        counts.
+                    </p>
+
+                    <div class="grid md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <!-- Row 1 -->
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Structures (need 6)</label>
+                            <input type="number" name="structures" value="6"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Current Sensors (need 2)</label>
+                            <input type="number" name="current_sensors" value="2"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Temp Sensor (need 1)</label>
+                            <input type="number" name="temp_sensors" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">FRAM (need 1)</label>
+                            <input type="number" name="fram" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+
+                        <!-- Row 2 -->
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">SD Card (need 1)</label>
+                            <input type="number" name="sd_card" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Reaction Wheel (need 1)</label>
+                            <input type="number" name="reaction_wheel" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">MPU (IMU) (need 1)</label>
+                            <input type="number" name="mpu" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">GPS (need 1)</label>
+                            <input type="number" name="gps" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+
+                        <!-- Row 3 -->
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Motor Driver (need 1)</label>
+                            <input type="number" name="motor_driver" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Phillips Screwdriver (need 1)</label>
+                            <input type="number" name="phillips_screwdriver" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Screw Gauge 3D (need 1)</label>
+                            <input type="number" name="screw_gauge_3d" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Standoff Tool 3D (need 1)</label>
+                            <input type="number" name="standoff_tool_3d" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+
+                        <!-- Row 4 -->
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 10mm</label>
+                            <input type="number" name="m3_10mm" value="10"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 10mm + thread</label>
+                            <input type="number" name="m3_10mm_thread" value="10"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 9mm + thread</label>
+                            <input type="number" name="m3_9mm_thread" value="10"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 20mm + thread</label>
+                            <input type="number" name="m3_20mm_thread" value="10"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 6mm</label>
+                            <input type="number" name="m3_6mm" value="4"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                    </div>
+                </section>
+
+                <p id="msg"></p>
+
+                <div class="flex justify-end pt-4 border-t border-gray-200">
+                    <button type="submit" id="submitBtn"
+                        class="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-semibold transition-colors shadow-sm">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>Save Cubesat</span>
+                    </button>
+                </div>
+            </form>
+        </main>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>

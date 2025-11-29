@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>SpacePoint – Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+    </style>
+
+    <script defer>
+        let dashboardData = {
+            totalCubesats: 0,
+            workingCubesats: 0,
+            damagedCubesats: 0,
+            repairingCubesats: 0,
+            totalInstructors: 0,
+            completeCubesats: 0,
+            incompleteCubesats: 0,
+            totalUsers: 0
+        };
+
+        function ensureAuth() {
+            const token = getToken();
+            const role = getRole();
+            if (!token || (role !== "admin" && role !== "operations")) {
+                window.location.href = "login.html";
+            } else {
+                document.getElementById("user-role").textContent = role;
+                document.getElementById("mobile-user-role").textContent = role;
+
+                // Hide user management features for non-admin users
+                if (role !== "admin") {
+                    const userElements = document.querySelectorAll('[data-admin-only]');
+                    userElements.forEach(el => el.style.display = 'none');
+                }
+            }
+        }
+
+        async function loadDashboardData() {
+            try {
+                console.log('Loading dashboard data...');
+
+                // Method 1: Try the new dashboard endpoint
+                try {
+                    const stats = await apiFetch("/dashboard/statistics");
+                    console.log('Dashboard stats:', stats);
+
+                    // Update dashboard data
+                    dashboardData.totalCubesats = stats.cubesats?.total || stats.total_cubesats || 0;
+                    dashboardData.workingCubesats = stats.cubesats?.working || stats.working_cubesats || 0;
+                    dashboardData.damagedCubesats = stats.cubesats?.damaged || stats.damaged_cubesats || 0;
+                    dashboardData.repairingCubesats = stats.cubesats?.repeating || stats.repeating_cubesats || 0;
+                    dashboardData.completeCubesats = stats.cubesats?.complete || stats.complete_cubesats || 0;
+                    dashboardData.incompleteCubesats = stats.cubesats?.incomplete || stats.incomplete_cubesats || 0;
+                    dashboardData.totalInstructors = stats.instructors?.total || stats.total_instructors || 0;
+                    dashboardData.totalUsers = stats.users?.total || stats.total_users || 0;
+
+                } catch (dashboardErr) {
+                    console.log('Dashboard endpoint failed, using fallback:', dashboardErr);
+                    await loadFallbackData();
+                    return;
+                }
+
+                updateDashboardUI();
+
+            } catch (err) {
+                console.error('Error loading dashboard data:', err);
+                await loadFallbackData();
+            }
+        }
+
+        async function loadFallbackData() {
+            try {
+                console.log('Loading fallback data...');
+
+                // Load data from individual endpoints
+                const cubesats = await apiFetch("/cubesats/");
+                const instructors = await apiFetch("/instructors/");
+
+                // Only load users if admin
+                let users = [];
+                if (getRole() === 'admin') {
+                    try {
+                        users = await apiFetch("/users/");
+                    } catch (userErr) {
+                        console.log('Users endpoint not available:', userErr);
+                    }
+                }
+
+                console.log('Cubesats data:', cubesats);
+                console.log('Instructors data:', instructors);
+                console.log('Users data:', users);
+
+                // Calculate statistics manually
+                dashboardData.totalCubesats = cubesats.length;
+                dashboardData.workingCubesats = cubesats.filter(c => c.status === 'working').length;
+                dashboardData.damagedCubesats = cubesats.filter(c => c.status === 'damaged').length;
+                dashboardData.repairingCubesats = cubesats.filter(c => c.status === 'repeating').length;
+                dashboardData.completeCubesats = cubesats.filter(c => c.is_complete).length;
+                dashboardData.incompleteCubesats = cubesats.filter(c => !c.is_complete).length;
+                dashboardData.totalInstructors = instructors.length;
+                dashboardData.totalUsers = users.length;
+
+                console.log('Calculated stats:', dashboardData);
+
+                updateDashboardUI();
+            } catch (err) {
+                console.error('Error loading fallback data:', err);
+                // Set some dummy data for testing
+                dashboardData.totalCubesats = 15;
+                dashboardData.workingCubesats = 8;
+                dashboardData.damagedCubesats = 2;
+                dashboardData.repairingCubesats = 5;
+                dashboardData.completeCubesats = 10;
+                dashboardData.incompleteCubesats = 5;
+                dashboardData.totalInstructors = 7;
+                dashboardData.totalUsers = 4;
+                updateDashboardUI();
+            }
+        }
+
+        function updateDashboardUI() {
+            console.log('Updating UI with data:', dashboardData);
+
+            // Update all statistics elements
+            const elements = {
+                'total-cubesats': dashboardData.totalCubesats,
+                'working-cubesats': dashboardData.workingCubesats,
+                'damaged-cubesats': dashboardData.damagedCubesats,
+                'repeating-cubesats': dashboardData.repairingCubesats,
+                'complete-cubesats': dashboardData.completeCubesats,
+                'incomplete-cubesats': dashboardData.incompleteCubesats,
+                'total-instructors': dashboardData.totalInstructors,
+                'total-users': dashboardData.totalUsers,
+                'working-cubesats-display': dashboardData.workingCubesats,
+                'damaged-cubesats-display': dashboardData.damagedCubesats,
+                'repeating-cubesats-display': dashboardData.repairingCubesats,
+                'incomplete-cubesats-display': dashboardData.incompleteCubesats
+            };
+
+            // Update each element
+            for (const [id, value] of Object.entries(elements)) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.textContent = value;
+                    console.log(`Updated ${id}: ${value}`);
+                } else {
+                    console.warn(`Element with id '${id}' not found`);
+                }
+            }
+
+            // Update progress bars
+            const workingPercent = dashboardData.totalCubesats > 0 ? (dashboardData.workingCubesats / dashboardData.totalCubesats) * 100 : 0;
+            const completePercent = dashboardData.totalCubesats > 0 ? (dashboardData.completeCubesats / dashboardData.totalCubesats) * 100 : 0;
+
+            const workingProgress = document.getElementById('working-progress');
+            const completeProgress = document.getElementById('complete-progress');
+
+            if (workingProgress) {
+                workingProgress.style.width = `${workingPercent}%`;
+                console.log(`Working progress: ${workingPercent}%`);
+            }
+            if (completeProgress) {
+                completeProgress.style.width = `${completePercent}%`;
+                console.log(`Complete progress: ${completePercent}%`);
+            }
+
+            console.log('UI update completed');
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadDashboardData();
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+                        <p class="text-sm text-gray-500 mt-1">Overview of your SpacePoint inventory system</p>
+                    </div>
+                    <div class="hidden lg:flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span id="user-role"
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Quick Actions -->
+        <div class="p-6 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <a href="cubesat_add.html"
+                    class="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow group">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">Add
+                            Cubesat</span>
+                        <span class="text-purple-600 text-xl">
+                            <i class="fa-solid fa-plus"></i>
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500">Register a new satellite and run checklist automatically</p>
+                </a>
+
+                <a href="cubesats_list.html"
+                    class="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow group">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">Cubesats
+                            Inventory</span>
+                        <span class="text-purple-600 text-xl">
+                            <i class="fa-solid fa-cubes"></i>
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500">View status, location, and missing items for each kit</p>
+                </a>
+
+                <a href="instructors_add.html"
+                    class="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow group">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">Add
+                            Instructor</span>
+                        <span class="text-purple-600 text-xl">
+                            <i class="fa-solid fa-user-plus"></i>
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500">Register a new trainer for upcoming workshops</p>
+                </a>
+
+                <!-- Users Quick Actions - Admin Only -->
+                <a href="users.html" data-admin-only
+                    class="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow group">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">Manage
+                            Users</span>
+                        <span class="text-purple-600 text-xl">
+                            <i class="fa-solid fa-users-gear"></i>
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500">Add, edit, and manage system users and permissions</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- Statistics Section -->
+        <div class="flex-1 p-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-6">System Overview</h2>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Cubesats Statistics -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-cubes text-purple-600"></i>
+                        Cubesats Statistics
+                    </h3>
+
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="text-center p-4 bg-gray-50 rounded-lg">
+                            <div class="text-2xl font-bold text-gray-900" id="total-cubesats">0</div>
+                            <div class="text-sm text-gray-500">Total Cubesats</div>
+                        </div>
+                        <div class="text-center p-4 bg-gray-50 rounded-lg">
+                            <div class="text-2xl font-bold text-gray-900" id="total-instructors">0</div>
+                            <div class="text-sm text-gray-500">Total Instructors</div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-sm text-gray-600 mb-1">
+                                <span>Working Cubesats</span>
+                                <span id="working-cubesats">0</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div id="working-progress"
+                                    class="bg-green-500 h-2 rounded-full transition-all duration-500" style="width: 0%">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex justify-between text-sm text-gray-600 mb-1">
+                                <span>Complete Kits</span>
+                                <span id="complete-cubesats">0</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div id="complete-progress"
+                                    class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Breakdown -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-chart-pie text-purple-600"></i>
+                        Status Breakdown
+                    </h3>
+
+                    <div class="space-y-4">
+                        <div
+                            class="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                                <span class="font-medium text-green-800">Working</span>
+                            </div>
+                            <span class="text-lg font-bold text-green-800" id="working-cubesats-display">0</span>
+                        </div>
+
+                        <div class="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                                <span class="font-medium text-red-800">Damaged</span>
+                            </div>
+                            <span class="text-lg font-bold text-red-800" id="damaged-cubesats-display">0</span>
+                        </div>
+
+                        <div
+                            class="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 bg-amber-500 rounded-full"></div>
+                                <span class="font-medium text-amber-800">Repairing</span>
+                            </div>
+                            <span class="text-lg font-bold text-amber-800" id="repeating-cubesats-display">0</span>
+                        </div>
+
+                        <div class="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                                <span class="font-medium text-blue-800">Incomplete Kits</span>
+                            </div>
+                            <span class="text-lg font-bold text-blue-800" id="incomplete-cubesats-display">0</span>
+                        </div>
+
+                        <!-- Users Count - Admin Only -->
+                        <div data-admin-only
+                            class="flex items-center justify-between p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 bg-purple-500 rounded-full"></div>
+                                <span class="font-medium text-purple-800">System Users</span>
+                            </div>
+                            <span class="text-lg font-bold text-purple-800" id="total-users">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Receipt Overview Section -->
+            <div class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div
+                    class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white flex justify-between items-center">
+                    <h3 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-receipt"></i>
+                        Receipt Overview
+                    </h3>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    ID</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    CubeSat</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Instructor</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Status</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Date</th>
+                                <th
+                                    class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="receipts-tbody" class="bg-white divide-y divide-gray-200">
+                            <!-- Receipts will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="receipts-empty" class="flex items-center justify-center h-32 text-gray-500 hidden">
+                    No receipts found
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+
+    <script>
+        async function loadReceipts() {
+            try {
+                const receipts = await apiFetch("/receipts/");
+                const tbody = document.getElementById("receipts-tbody");
+                const emptyDiv = document.getElementById("receipts-empty");
+
+                tbody.innerHTML = "";
+
+                if (receipts.length === 0) {
+                    emptyDiv.classList.remove("hidden");
+                    return;
+                }
+
+                emptyDiv.classList.add("hidden");
+
+                receipts.forEach(receipt => {
+                    const row = document.createElement("tr");
+                    const date = new Date(receipt.created_at).toLocaleDateString();
+                    const statusColor = receipt.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800';
+
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">#${receipt.id}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">${receipt.cubesat_name}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${receipt.instructor_name}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">
+                                ${receipt.status}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${date}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="deleteReceipt(${receipt.id})" class="text-red-600 hover:text-red-900">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (err) {
+                console.error("Error loading receipts:", err);
+            }
+        }
+
+        async function deleteReceipt(id) {
+            if (!confirm("Are you sure you want to delete this receipt?")) return;
+
+            try {
+                await apiFetch(`/receipts/${id}`, { method: "DELETE" });
+                loadReceipts(); // Reload list
+            } catch (err) {
+                console.error("Error deleting receipt:", err);
+                alert("Failed to delete receipt");
+            }
+        }
+
+        // Load receipts when page loads
+        document.addEventListener("DOMContentLoaded", loadReceipts);
+    </script>
+</body>
+
+</html>

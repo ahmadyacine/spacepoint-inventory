@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Generate Receipt – SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+
+        /* Receipt specific styles for PDF generation */
+        .receipt-container {
+            background: white;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+            font-family: 'Arial', sans-serif;
+        }
+
+        .receipt-header {
+            border-bottom: 2px solid #241134;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .receipt-item {
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+        }
+
+        .receipt-total {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #241134;
+        }
+
+        .signature-area {
+            margin-top: 60px;
+        }
+    </style>
+    <script defer>
+        // Available tools configuration
+        const availableTools = {
+            structures: { name: "Structures (Frames, etc.)", unit: "units" },
+            current_sensors: { name: "Current Sensors", unit: "units" },
+            temp_sensors: { name: "Temperature Sensors", unit: "units" },
+            fram: { name: "FRAM", unit: "units" },
+            sd_card: { name: "SD Card", unit: "units" },
+            reaction_wheel: { name: "Reaction Wheel", unit: "units" },
+            mpu: { name: "MPU (Gyro/Accel)", unit: "units" },
+            gps: { name: "GPS Module", unit: "units" },
+            motor_driver: { name: "Motor Driver", unit: "units" },
+            phillips_screwdriver: { name: "Phillips Screwdriver", unit: "units" },
+            screw_gauge_3d: { name: "Screw Gauge (3D Printed)", unit: "units" },
+            standoff_tool_3d: { name: "Standoff Tool (3D Printed)", unit: "units" },
+            m3_10mm: { name: "M3 10mm Screws", unit: "units" },
+            m3_10mm_thread: { name: "M3 10mm Thread", unit: "units" },
+            m3_9mm_thread: { name: "M3 9mm Thread", unit: "units" },
+            m3_20mm_thread: { name: "M3 20mm Thread", unit: "units" },
+            m3_6mm: { name: "M3 6mm Screws", unit: "units" }
+        };
+
+        let selectedCubesat = null;
+        let cubesatsData = [];
+
+        function ensureAuth() {
+            const token = getToken();
+            const role = getRole();
+
+            if (!token || (role !== "admin" && role !== "operations")) {
+                window.location.href = "login.html";
+                return;
+            }
+            document.getElementById("user-role").textContent = role;
+            document.getElementById("mobile-user-role").textContent = role;
+        }
+
+        async function loadCubesats() {
+            const select = document.getElementById('cubesatSelect');
+            try {
+                const data = await apiFetch('/cubesats/');
+                cubesatsData = data;
+
+                // Sort by ID
+                data.sort((a, b) => a.id - b.id);
+
+                data.forEach(cubesat => {
+                    const option = document.createElement('option');
+                    option.value = cubesat.id;
+                    option.textContent = `#${cubesat.id} - ${cubesat.name} (${cubesat.location || 'No Location'})`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading cubesats:', error);
+                showNotification('Failed to load cubesats', 'error');
+            }
+        }
+
+        function onCubesatSelect() {
+            const select = document.getElementById('cubesatSelect');
+            const toolsSection = document.getElementById('toolsSection');
+            const previewSection = document.getElementById('previewSection');
+
+            const id = parseInt(select.value);
+            selectedCubesat = cubesatsData.find(c => c.id === id);
+
+            if (selectedCubesat) {
+                toolsSection.classList.remove('hidden');
+                previewSection.classList.add('hidden');
+                renderToolsForm();
+
+                // Auto-fill tools based on selected Cubesat
+                Object.keys(availableTools).forEach(key => {
+                    const input = document.getElementById(`tool_${key}`);
+                    if (input && selectedCubesat[key] !== undefined) {
+                        input.value = selectedCubesat[key];
+                    }
+                });
+
+            } else {
+                toolsSection.classList.add('hidden');
+                previewSection.classList.add('hidden');
+            }
+        }
+
+        function renderToolsForm() {
+            const container = document.getElementById('toolsContainer');
+            container.innerHTML = '';
+
+            Object.entries(availableTools).forEach(([key, tool]) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg';
+                div.innerHTML = `
+                    <label class="text-sm font-medium text-gray-700 flex-1">${tool.name}</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="tool_${key}" min="0" value="0"
+                            class="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-500">
+                        <span class="text-xs text-gray-500 w-12">${tool.unit}</span>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function generateReceiptPreview() {
+            if (!selectedCubesat) return;
+
+            const previewSection = document.getElementById('previewSection');
+            previewSection.classList.remove('hidden');
+
+            const date = new Date().toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+
+            let receiptHTML = `
+                <div id="receiptContent" class="receipt-container shadow-lg bg-white p-8 max-w-2xl mx-auto border border-gray-200">
+                    <!-- Header -->
+                    <div class="receipt-header mb-8 border-b pb-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h1 class="text-3xl font-bold text-purple-900">SPACEPOINT</h1>
+                                <p class="text-gray-600">Satellite Technology & Education Solutions</p>
+                                <p class="text-sm text-gray-500 mt-2">
+                                    123 Space Tech Blvd, Innovation District<br>
+                                    contact@spacepoint.com | +1 (555) 123-4567
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <h2 class="text-xl font-bold text-gray-800">EQUIPMENT RECEIPT</h2>
+                                <p class="text-gray-600">Date: ${date}</p>
+                                <p class="text-gray-600">Receipt #: SP-RCP-${selectedCubesat.id}-${Date.now().toString().slice(-6)}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Info -->
+                    <div class="mb-8">
+                        <div class="grid grid-cols-2 gap-8">
+                            <div>
+                                <h3 class="font-bold text-gray-700 mb-2">Issued To:</h3>
+                                <p class="text-gray-800">
+                                    <strong>Cubesat:</strong> ${selectedCubesat.name}<br>
+                                    <strong>ID:</strong> ${selectedCubesat.id}<br>
+                                    <strong>Location:</strong> ${selectedCubesat.location || 'N/A'}
+                                </p>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-gray-700 mb-2">Issued By:</h3>
+                                <p class="text-gray-800">
+                                    SpacePoint Inventory Management<br>
+                                    Operations Department
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tools List -->
+                    <div class="mb-4">
+                        <h3 class="font-semibold text-lg mb-3 border-b pb-2">Equipment Issued</h3>
+                        <div class="space-y-2">
+            `;
+
+            let totalItems = 0;
+            Object.entries(availableTools).forEach(([key, tool]) => {
+                const quantity = parseInt(document.getElementById(`tool_${key}`).value) || 0;
+                if (quantity > 0) {
+                    totalItems += quantity;
+                    receiptHTML += `
+                        <div class="receipt-item flex justify-between py-1 border-b border-gray-100 last:border-0">
+                            <span>${tool.name}</span>
+                            <span><strong>${quantity} ${tool.unit}</strong></span>
+                        </div>
+                    `;
+                }
+            });
+
+            receiptHTML += `
+                        </div>
+                    </div>
+
+                    <!-- Summary -->
+                    <div class="receipt-total mt-6 pt-4 border-t border-gray-200">
+                        <div class="flex justify-between text-lg font-bold">
+                            <span>Total Items Issued:</span>
+                            <span>${totalItems} items</span>
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="mb-6 mt-6 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                        <p class="text-sm text-yellow-800">
+                            <strong>Note:</strong> All equipment must be returned in good condition. 
+                            Any damaged or missing items will be charged accordingly.
+                        </p>
+                    </div>
+
+                    <!-- Signatures -->
+                    <div class="signature-area mt-12">
+                        <div class="grid grid-cols-2 gap-8">
+                            <div>
+                                <p class="border-t border-gray-400 pt-2 text-center text-sm text-gray-600">
+                                    <strong>Issued By</strong><br>
+                                    SpacePoint Operations
+                                </p>
+                            </div>
+                            <div>
+                                <p class="border-t border-gray-400 pt-2 text-center text-sm text-gray-600">
+                                    <strong>Received By</strong><br>
+                                    Instructor Signature
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="text-center mt-8 pt-4 border-t border-gray-300">
+                        <div class="mb-4">
+                            <img src="SpacePointlogo.png" alt="SpacePoint Logo" class="h-12 mx-auto opacity-50">
+                        </div>
+                        <p class="text-xs text-gray-500">
+                            &copy; Copyright SpacePoint 2025. All rights reserved.<br>
+                            This is an official document of SpacePoint Technologies.
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('receiptPreview').innerHTML = receiptHTML;
+            document.getElementById('downloadBtn').classList.remove('hidden');
+            document.getElementById('sendApprovalBtn').classList.remove('hidden');
+
+            // Scroll to preview
+            previewSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function downloadReceiptPDF() {
+            const receiptElement = document.getElementById('receiptContent');
+
+            if (!receiptElement) {
+                showNotification('Please generate receipt first', 'error');
+                return;
+            }
+
+            try {
+                showNotification('Generating PDF...', 'info');
+
+                // Configure html2canvas
+                const canvas = await html2canvas(receiptElement, {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: '#ffffff',
+                    onclone: function (clonedDoc) {
+                        const images = clonedDoc.querySelectorAll('img');
+                        images.forEach(img => {
+                            img.setAttribute('crossOrigin', 'anonymous');
+                        });
+                    }
+                });
+
+                const imgData = canvas.toDataURL('image/png', 1.0);
+                const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+                const imgWidth = 210;
+                const pageHeight = 295;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                let heightLeft = imgHeight;
+                let position = 0;
+
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+
+                const receiptNumber = `SP-RCP-${selectedCubesat.id}-${Date.now().toString().slice(-6)}`;
+                pdf.save(`${receiptNumber}.pdf`);
+
+                showNotification('PDF downloaded successfully!', 'success');
+
+            } catch (error) {
+                console.error('Error generating PDF:', error);
+
+                // Fallback
+                try {
+                    showNotification('Trying alternative method...', 'info');
+                    await downloadReceiptPDFFallback();
+                } catch (fallbackError) {
+                    console.error('Fallback also failed:', fallbackError);
+                    showNotification('Error generating PDF. Please try again.', 'error');
+                }
+            }
+        }
+
+        async function downloadReceiptPDFFallback() {
+            const receiptElement = document.getElementById('receiptContent');
+            const tempElement = receiptElement.cloneNode(true);
+
+            // Remove images for fallback
+            const images = tempElement.querySelectorAll('img');
+            images.forEach(img => img.remove());
+
+            document.body.appendChild(tempElement);
+
+            try {
+                const canvas = await html2canvas(tempElement, {
+                    scale: 2,
+                    useCORS: false,
+                    logging: false,
+                    backgroundColor: '#ffffff'
+                });
+
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+                const imgWidth = 210;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+                const receiptNumber = `SP-RCP-${selectedCubesat.id}-${Date.now().toString().slice(-6)}`;
+                pdf.save(`${receiptNumber}.pdf`);
+
+            } finally {
+                document.body.removeChild(tempElement);
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+
+            notification.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-transform duration-300 translate-x-full`;
+            notification.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+
+        async function sendForApproval() {
+            if (!selectedCubesat) return;
+
+            const items = {};
+            Object.entries(availableTools).forEach(([key, tool]) => {
+                const quantity = parseInt(document.getElementById(`tool_${key}`).value) || 0;
+                if (quantity > 0) {
+                    items[key] = quantity;
+                }
+            });
+
+            if (Object.keys(items).length === 0) {
+                showNotification('No items selected to issue', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('sendApprovalBtn');
+            const originalText = btn.innerHTML;
+
+            try {
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Sending...';
+                btn.disabled = true;
+
+                await apiFetch('/receipts/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cubesat_id: selectedCubesat.id,
+                        items: items
+                    })
+                });
+
+                showNotification('Receipt sent for approval successfully!', 'success');
+
+                btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i> Sent';
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }, 2000);
+
+            } catch (err) {
+                console.error('Error sending receipt:', err);
+                showNotification('Failed to send receipt: ' + err.message, 'error');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadCubesats();
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col -translate-x-full lg:translate-x-0">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span class="font-semibold text-purple-600 capitalize" id="mobile-user-role">admin</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Generate Equipment Receipt</h1>
+                        <p class="text-sm text-gray-500 mt-1">Create official receipts for equipment issued to
+                            instructors</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"
+                            id="user-role">admin</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div class="flex-1 p-6">
+            <div class="max-w-6xl mx-auto">
+                <!-- Selection Section -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">1. Select Cubesat</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="cubesatSelect" class="block text-sm font-medium text-gray-700 mb-2">
+                                Choose Cubesat
+                            </label>
+                            <select id="cubesatSelect" onchange="onCubesatSelect()"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                <option value="">Select Cubesat</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tools Selection Section -->
+                <div id="toolsSection" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 hidden">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">2. Select Tools to Issue</h2>
+                    <div class="space-y-3" id="toolsContainer">
+                        <!-- Tools will be populated here -->
+                    </div>
+                    <div class="mt-6">
+                        <button onclick="generateReceiptPreview()"
+                            class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                            Generate Receipt Preview
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Receipt Preview Section -->
+                <div id="previewSection" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hidden">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold text-gray-900">3. Receipt Preview</h2>
+                        <div class="flex gap-3">
+                            <button id="sendApprovalBtn" onclick="sendForApproval()"
+                                class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors hidden">
+                                <i class="fa-solid fa-paper-plane mr-2"></i>
+                                Send for Approval
+                            </button>
+                            <button id="downloadBtn" onclick="downloadReceiptPDF()"
+                                class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors hidden">
+                                <i class="fa-solid fa-download mr-2"></i>
+                                Download PDF
+                            </button>
+                        </div>
+                    </div>
+                    <div id="receiptPreview">
+                        <!-- Receipt will be generated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>

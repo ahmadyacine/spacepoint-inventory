@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Add Instructor – SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+    </style>
+    <script defer>
+        let allUsers = [];
+        let selectedUserId = null;
+
+        function ensureAuth() {
+            const token = getToken();
+            const role = getRole();
+            if (!token || (role !== "admin" && role !== "operations")) {
+                window.location.href = "login.html";
+            } else {
+                // Update user info in sidebar
+                const roleSpan = document.getElementById("user-role");
+                const mobileRoleSpan = document.getElementById("mobile-user-role");
+                if (roleSpan) roleSpan.textContent = role;
+                if (mobileRoleSpan) mobileRoleSpan.textContent = role;
+
+                // Hide user management for non-admins
+                if (role !== "admin") {
+                    const userElements = document.querySelectorAll('[data-admin-only]');
+                    userElements.forEach(el => el.style.display = 'none');
+                }
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+
+        async function loadUsers() {
+            try {
+                const users = await apiFetch("/users/");
+                allUsers = users;
+            } catch (err) {
+                console.error("Failed to load users:", err);
+            }
+        }
+
+        function filterUsers() {
+            const query = document.getElementById("userSearch").value.toLowerCase();
+            const resultsDiv = document.getElementById("searchResults");
+
+            if (!query) {
+                resultsDiv.classList.add("hidden");
+                return;
+            }
+
+            const filtered = allUsers.filter(u =>
+                u.username.toLowerCase().includes(query) ||
+                u.full_name.toLowerCase().includes(query)
+            );
+
+            if (filtered.length === 0) {
+                resultsDiv.innerHTML = '<div class="p-3 text-sm text-gray-500">No users found</div>';
+            } else {
+                resultsDiv.innerHTML = filtered.map(u => `
+                    <div onclick="selectUser(${u.id}, '${u.full_name}', '${u.username}')" 
+                         class="p-3 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-0">
+                        <p class="font-medium text-gray-900">${u.full_name}</p>
+                        <p class="text-xs text-gray-500">@${u.username} • ${u.role}</p>
+                    </div>
+                `).join('');
+            }
+            resultsDiv.classList.remove("hidden");
+        }
+
+        function selectUser(id, fullName, username) {
+            selectedUserId = id;
+            document.getElementById("user_id").value = id;
+            document.getElementById("name").value = fullName;
+
+            // Show selected user UI
+            const searchContainer = document.getElementById("searchContainer");
+            const selectedContainer = document.getElementById("selectedUserContainer");
+
+            document.getElementById("selectedUserName").textContent = fullName;
+            document.getElementById("selectedUserUsername").textContent = `@${username}`;
+
+            searchContainer.classList.add("hidden");
+            selectedContainer.classList.remove("hidden");
+            document.getElementById("searchResults").classList.add("hidden");
+        }
+
+        function clearSelectedUser() {
+            selectedUserId = null;
+            document.getElementById("user_id").value = "";
+            document.getElementById("name").value = "";
+            document.getElementById("userSearch").value = "";
+
+            document.getElementById("searchContainer").classList.remove("hidden");
+            document.getElementById("selectedUserContainer").classList.add("hidden");
+        }
+
+        async function addInstructor(event) {
+            event.preventDefault();
+            const msgEl = document.getElementById("msg");
+            const submitBtn = document.getElementById("submitBtn");
+            const originalText = submitBtn.innerHTML;
+
+            // Show loading state
+            submitBtn.innerHTML = `
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <span>Saving...</span>
+            `;
+            submitBtn.disabled = true;
+
+            msgEl.textContent = "";
+            msgEl.className = "";
+
+            const payload = {
+                name: document.getElementById("name").value,
+                email: document.getElementById("email").value || null,
+                phone: document.getElementById("phone").value || null,
+                location: document.getElementById("location").value || null,
+                user_id: selectedUserId
+            };
+
+            try {
+                await apiFetch("/instructors/", {
+                    method: "POST",
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+
+                msgEl.textContent = "Instructor added successfully!";
+                msgEl.className = "p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm";
+                event.target.reset();
+                clearSelectedUser();
+
+                // Redirect after success
+                setTimeout(() => {
+                    window.location.href = "instructors_list.html";
+                }, 1500);
+
+            } catch (err) {
+                msgEl.textContent = "Error: " + (err.message || "Failed to add instructor");
+                msgEl.className = "p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm";
+            } finally {
+                // Reset button state
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadUsers();
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span class="font-semibold text-purple-600 capitalize" id="mobile-user-role">admin</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Add Instructor</h1>
+                        <p class="text-sm text-gray-500 mt-1">Register a new instructor to assign CubeSats and workshops
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"
+                            id="user-role">admin</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+            <!-- Form Card -->
+            <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-900">Instructor Information</h2>
+                    <p class="text-sm text-gray-500 mt-1">Fill in the details below to create a new instructor profile
+                    </p>
+                </div>
+
+                <form onsubmit="addInstructor(event)" class="p-6">
+                    <input type="hidden" id="user_id" name="user_id">
+
+                    <!-- Link User Section -->
+                    <div class="mb-8 p-4 bg-purple-50 rounded-lg border border-purple-100">
+                        <h3 class="text-sm font-semibold text-purple-900 mb-2">Link to User Account (Optional)</h3>
+                        <p class="text-xs text-purple-700 mb-3">Does this instructor have a user account? Link it here
+                            to auto-fill details.</p>
+
+                        <div id="searchContainer" class="relative">
+                            <div class="relative">
+                                <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
+                                <input type="text" id="userSearch" oninput="filterUsers()"
+                                    placeholder="Search by username or name..."
+                                    class="w-full pl-10 pr-4 py-2 border border-purple-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            </div>
+                            <div id="searchResults"
+                                class="hidden absolute w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-10">
+                                <!-- Results will be populated here -->
+                            </div>
+                        </div>
+
+                        <div id="selectedUserContainer"
+                            class="hidden flex items-center justify-between bg-white p-3 rounded-md border border-purple-200">
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center text-purple-600">
+                                    <i class="fa-solid fa-user-check"></i>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-900" id="selectedUserName"></p>
+                                    <p class="text-xs text-gray-500" id="selectedUserUsername"></p>
+                                </div>
+                            </div>
+                            <button type="button" onclick="clearSelectedUser()"
+                                class="text-red-500 hover:text-red-700 text-sm">
+                                <i class="fa-solid fa-times"></i> Remove
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Name Field -->
+                        <div>
+                            <label for="name" class="block text-sm font-medium text-gray-700 mb-2">
+                                Full Name <span class="text-red-500">*</span>
+                            </label>
+                            <input id="name" required placeholder="Enter instructor's full name"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+
+                        <!-- Email Field -->
+                        <div>
+                            <label for="email" class="block text-sm font-medium text-gray-700 mb-2">
+                                Email Address
+                            </label>
+                            <input id="email" type="email" placeholder="Enter email address"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+
+                        <!-- Phone Field -->
+                        <div>
+                            <label for="phone" class="block text-sm font-medium text-gray-700 mb-2">
+                                Phone Number
+                            </label>
+                            <input id="phone" placeholder="Enter phone number"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+
+                        <!-- Location Field -->
+                        <div>
+                            <label for="location" class="block text-sm font-medium text-gray-700 mb-2">
+                                Location
+                            </label>
+                            <select id="location"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors bg-white">
+                                <option value="">Select location</option>
+                                <option value="Ajman">Ajman</option>
+                                <option value="Sharjah">Sharjah</option>
+                                <option value="Dubai">Dubai</option>
+                                <option value="Abu Dhabi">Abu Dhabi</option>
+                                <option value="Ras Al Khaimah">Ras Al Khaimah</option>
+                                <option value="Umm Al Quwain">Umm Al Quwain</option>
+                                <option value="Fujairah">Fujairah</option>
+                                <option value="Al Ain">Al Ain</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Message Display -->
+                    <div id="msg" class="mt-6"></div>
+
+                    <!-- Form Actions -->
+                    <div class="flex items-center justify-between pt-6 mt-6 border-t border-gray-200">
+                        <a href="instructors_list.html"
+                            class="inline-flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-gray-900 transition-colors">
+                            <i class="fa-solid fa-arrow-left"></i>
+                            <span>Back to Instructors</span>
+                        </a>
+
+                        <button id="submitBtn" type="submit"
+                            class="inline-flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                            <i class="fa-solid fa-user-plus"></i>
+                            <span>Add Instructor</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Quick Tips -->
+            <div class="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div class="flex items-start gap-3">
+                    <i class="fa-solid fa-circle-info text-blue-500 mt-0.5"></i>
+                    <div>
+                        <h3 class="font-medium text-blue-900 mb-1">Quick Tips</h3>
+                        <ul class="text-sm text-blue-700 space-y-1">
+                            <li>• Link a user account to automatically sync name and connect profiles</li>
+                            <li>• Name field is required for creating an instructor</li>
+                            <li>• Email and phone help with communication and notifications</li>
+                            <li>• Location helps assign instructors to appropriate workshops</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>

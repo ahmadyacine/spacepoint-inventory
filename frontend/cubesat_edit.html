@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Edit Cubesat – SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+    </style>
+    <script defer>
+        let cubesatId = null;
+        let currentCubesat = null;
+
+        function ensureAuth() {
+            const token = getToken();
+            const role = getRole();
+            if (!token) window.location.href = "login.html";
+            else {
+                const userRoleEl = document.getElementById("user-role");
+                const mobileUserRoleEl = document.getElementById("mobile-user-role");
+                if (userRoleEl) userRoleEl.textContent = role;
+                if (mobileUserRoleEl) mobileUserRoleEl.textContent = role;
+
+                // Hide user management features for non-admin users
+                if (role !== "admin") {
+                    const userElements = document.querySelectorAll('[data-admin-only]');
+                    userElements.forEach(el => el.style.display = 'none');
+                }
+            }
+        }
+
+        function getUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('id');
+        }
+
+        async function loadInstructors() {
+            try {
+                const instructors = await apiFetch("/instructors/");
+                const select = document.getElementById("instructor_id");
+
+                // Clear existing options except the default one
+                select.innerHTML = '<option value="">Select Instructor (Optional)</option>';
+
+                instructors.forEach(inst => {
+                    const option = document.createElement("option");
+                    option.value = inst.id;
+                    option.textContent = `${inst.name} (ID: ${inst.id})`;
+                    select.appendChild(option);
+                });
+            } catch (err) {
+                console.error("Failed to load instructors:", err);
+                showNotification('Failed to load instructors list', 'error');
+            }
+        }
+
+        async function loadCubesat() {
+            cubesatId = getUrlParams();
+
+            if (!cubesatId) {
+                showNotification('No cubesat ID provided', 'error');
+                setTimeout(() => window.location.href = 'cubesats_list.html', 2000);
+                return;
+            }
+
+            // Show loading state
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('editCubesatForm').classList.add('hidden');
+
+            try {
+                // Load instructors first so the dropdown is populated
+                await loadInstructors();
+
+                const data = await apiFetch(`/cubesats/${cubesatId}`);
+                currentCubesat = data;
+                populateForm(data);
+
+                // Hide loading state
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('editCubesatForm').classList.remove('hidden');
+            } catch (err) {
+                console.error('Error loading cubesat:', err);
+                showNotification('Error loading cubesat data', 'error');
+                setTimeout(() => window.location.href = 'cubesats_list.html', 2000);
+            }
+        }
+
+        function populateForm(cubesat) {
+            // Basic information
+            document.getElementById('name').value = cubesat.name || '';
+            document.getElementById('status').value = cubesat.status || 'working';
+            document.getElementById('location').value = cubesat.location || '';
+            document.getElementById('delivered_date').value = cubesat.delivered_date || '';
+
+            // Set instructor dropdown value
+            if (cubesat.instructor_id) {
+                document.getElementById('instructor_id').value = cubesat.instructor_id;
+            }
+
+            // Components
+            document.getElementById('structures').value = cubesat.structures || 0;
+            document.getElementById('current_sensors').value = cubesat.current_sensors || 0;
+            document.getElementById('temp_sensors').value = cubesat.temp_sensors || 0;
+            document.getElementById('fram').value = cubesat.fram || 0;
+            document.getElementById('sd_card').value = cubesat.sd_card || 0;
+            document.getElementById('reaction_wheel').value = cubesat.reaction_wheel || 0;
+            document.getElementById('mpu').value = cubesat.mpu || 0;
+            document.getElementById('gps').value = cubesat.gps || 0;
+            document.getElementById('motor_driver').value = cubesat.motor_driver || 0;
+
+            // Tools and Hardware
+            document.getElementById('phillips_screwdriver').value = cubesat.phillips_screwdriver || 0;
+            document.getElementById('screw_gauge_3d').value = cubesat.screw_gauge_3d || 0;
+            document.getElementById('standoff_tool_3d').value = cubesat.standoff_tool_3d || 0;
+            document.getElementById('m3_10mm').value = cubesat.m3_10mm || 0;
+            document.getElementById('m3_10mm_thread').value = cubesat.m3_10mm_thread || 0;
+            document.getElementById('m3_9mm_thread').value = cubesat.m3_9mm_thread || 0;
+            document.getElementById('m3_20mm_thread').value = cubesat.m3_20mm_thread || 0;
+            document.getElementById('m3_6mm').value = cubesat.m3_6mm || 0;
+        }
+
+        async function updateCubesat(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+            const cubesatData = {
+                name: formData.get('name'),
+                status: formData.get('status'),
+                location: formData.get('location'),
+                delivered_date: formData.get('delivered_date'),
+                instructor_id: formData.get('instructor_id') ? parseInt(formData.get('instructor_id')) : null,
+                structures: parseInt(formData.get('structures')) || 0,
+                current_sensors: parseInt(formData.get('current_sensors')) || 0,
+                temp_sensors: parseInt(formData.get('temp_sensors')) || 0,
+                fram: parseInt(formData.get('fram')) || 0,
+                sd_card: parseInt(formData.get('sd_card')) || 0,
+                reaction_wheel: parseInt(formData.get('reaction_wheel')) || 0,
+                mpu: parseInt(formData.get('mpu')) || 0,
+                gps: parseInt(formData.get('gps')) || 0,
+                motor_driver: parseInt(formData.get('motor_driver')) || 0,
+                phillips_screwdriver: parseInt(formData.get('phillips_screwdriver')) || 0,
+                screw_gauge_3d: parseInt(formData.get('screw_gauge_3d')) || 0,
+                standoff_tool_3d: parseInt(formData.get('standoff_tool_3d')) || 0,
+                m3_10mm: parseInt(formData.get('m3_10mm')) || 0,
+                m3_10mm_thread: parseInt(formData.get('m3_10mm_thread')) || 0,
+                m3_9mm_thread: parseInt(formData.get('m3_9mm_thread')) || 0,
+                m3_20mm_thread: parseInt(formData.get('m3_20mm_thread')) || 0,
+                m3_6mm: parseInt(formData.get('m3_6mm')) || 0
+            };
+
+            // Basic validation
+            if (!cubesatData.name || !cubesatData.status || !cubesatData.location) {
+                showNotification('Name, Status, and Location are required fields', 'error');
+                return;
+            }
+
+            try {
+                const updateButton = document.getElementById('updateButton');
+                const originalText = updateButton.innerHTML;
+
+                // Show loading state
+                updateButton.innerHTML = `
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Updating...</span>
+                `;
+                updateButton.disabled = true;
+
+                const updatedCubesat = await apiFetch(`/cubesats/${cubesatId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(cubesatData)
+                });
+
+                showNotification('Cubesat updated successfully!', 'success');
+
+                // Redirect back to list after short delay
+                setTimeout(() => {
+                    window.location.href = 'cubesats_list.html';
+                }, 1500);
+
+            } catch (err) {
+                console.error('Error updating cubesat:', err);
+                showNotification('Error updating cubesat', 'error');
+
+                // Reset button state
+                const updateButton = document.getElementById('updateButton');
+                updateButton.innerHTML = `
+                    <i class="fa-solid fa-save mr-2"></i>
+                    <span>Update Cubesat</span>
+                `;
+                updateButton.disabled = false;
+            }
+        }
+
+        function cancelEdit() {
+            if (confirm('Are you sure you want to cancel? Any unsaved changes will be lost.')) {
+                window.location.href = 'cubesats_list.html';
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            // Remove any existing notifications
+            const existingNotification = document.querySelector('.notification');
+            if (existingNotification) {
+                existingNotification.remove();
+            }
+
+            // Create notification element
+            const notification = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+            const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+
+            notification.className = `notification fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-transform duration-300 translate-x-full`;
+            notification.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid ${icon}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadCubesat();
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 text-gray-900 min-h-screen flex">
+
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span class="font-semibold text-purple-600 capitalize" id="mobile-user-role">admin</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Content -->
+    <main class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Edit Cubesat</h1>
+                        <p class="text-sm text-gray-500 mt-1">Update cubesat information and inventory</p>
+                    </div>
+                    <div class="hidden lg:flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span id="user-role"
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="flex-1 p-6 max-w-6xl mx-auto w-full">
+            <div class="flex justify-end mb-4">
+                <a href="cubesats_list.html"
+                    class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-[#4f3069] text-white text-sm">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    <span>Back to List</span>
+                </a>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loadingState" class="bg-white shadow-sm rounded-lg p-8 text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                <p class="text-gray-500">Loading cubesat data...</p>
+            </div>
+
+            <!-- Edit Form -->
+            <div id="editCubesatForm" class="hidden bg-white shadow-sm rounded-lg overflow-hidden">
+                <form onsubmit="updateCubesat(event)">
+
+                    <!-- Basic Information Section -->
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-gray-900">Basic Information</h2>
+                    </div>
+
+                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Name -->
+                        <div>
+                            <label for="name" class="block text-sm font-medium text-gray-700 mb-1">
+                                Cubesat Name <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text" id="name" name="name" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                                placeholder="Enter cubesat name">
+                        </div>
+
+                        <!-- Status -->
+                        <div>
+                            <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
+                                Status <span class="text-red-500">*</span>
+                            </label>
+                            <select id="status" name="status" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 bg-white">
+                                <option value="working">Working</option>
+                                <option value="damaged">Damaged</option>
+                                <option value="repeating">Repeating</option>
+                            </select>
+                        </div>
+
+                        <!-- Location -->
+                        <div>
+                            <label for="location" class="block text-sm font-medium text-gray-700 mb-1">
+                                Location <span class="text-red-500">*</span>
+                            </label>
+                            <select id="location" name="location" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 bg-white">
+                                <option value="">Select Location</option>
+                                <option value="Ajman">Ajman</option>
+                                <option value="Sharjah">Sharjah</option>
+                                <option value="Dubai">Dubai</option>
+                                <option value="Abu Dhabi">Abu Dhabi</option>
+                                <option value="Ras Al Khaimah">Ras Al Khaimah</option>
+                                <option value="Umm Al Quwain">Umm Al Quwain</option>
+                                <option value="Fujairah">Fujairah</option>
+                                <option value="Al Ain">Al Ain</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <!-- Delivered Date -->
+                        <div>
+                            <label for="delivered_date" class="block text-sm font-medium text-gray-700 mb-1">
+                                Delivered Date
+                            </label>
+                            <input type="date" id="delivered_date" name="delivered_date"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Instructor -->
+                        <div class="md:col-span-2">
+                            <label for="instructor_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                Instructor
+                            </label>
+                            <select id="instructor_id" name="instructor_id"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500 bg-white">
+                                <option value="">Loading...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Components Section -->
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <h2 class="text-lg font-semibold text-gray-900">Components</h2>
+                    </div>
+
+                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Structures -->
+                        <div>
+                            <label for="structures" class="block text-sm font-medium text-gray-700 mb-1">
+                                Structures (Required: 6)
+                            </label>
+                            <input type="number" id="structures" name="structures" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Current Sensors -->
+                        <div>
+                            <label for="current_sensors" class="block text-sm font-medium text-gray-700 mb-1">
+                                Current Sensors (Required: 2)
+                            </label>
+                            <input type="number" id="current_sensors" name="current_sensors" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Temp Sensors -->
+                        <div>
+                            <label for="temp_sensors" class="block text-sm font-medium text-gray-700 mb-1">
+                                Temperature Sensors (Required: 1)
+                            </label>
+                            <input type="number" id="temp_sensors" name="temp_sensors" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- FRAM -->
+                        <div>
+                            <label for="fram" class="block text-sm font-medium text-gray-700 mb-1">
+                                FRAM (Required: 1)
+                            </label>
+                            <input type="number" id="fram" name="fram" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- SD Card -->
+                        <div>
+                            <label for="sd_card" class="block text-sm font-medium text-gray-700 mb-1">
+                                SD Card (Required: 1)
+                            </label>
+                            <input type="number" id="sd_card" name="sd_card" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Reaction Wheel -->
+                        <div>
+                            <label for="reaction_wheel" class="block text-sm font-medium text-gray-700 mb-1">
+                                Reaction Wheel (Required: 1)
+                            </label>
+                            <input type="number" id="reaction_wheel" name="reaction_wheel" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- MPU -->
+                        <div>
+                            <label for="mpu" class="block text-sm font-medium text-gray-700 mb-1">
+                                MPU (Required: 1)
+                            </label>
+                            <input type="number" id="mpu" name="mpu" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- GPS -->
+                        <div>
+                            <label for="gps" class="block text-sm font-medium text-gray-700 mb-1">
+                                GPS (Required: 1)
+                            </label>
+                            <input type="number" id="gps" name="gps" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Motor Driver -->
+                        <div>
+                            <label for="motor_driver" class="block text-sm font-medium text-gray-700 mb-1">
+                                Motor Driver (Required: 1)
+                            </label>
+                            <input type="number" id="motor_driver" name="motor_driver" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+                    </div>
+
+                    <!-- Tools and Hardware Section -->
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <h2 class="text-lg font-semibold text-gray-900">Tools and Hardware</h2>
+                    </div>
+
+                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Phillips Screwdriver -->
+                        <div>
+                            <label for="phillips_screwdriver" class="block text-sm font-medium text-gray-700 mb-1">
+                                Phillips Screwdriver (Required: 1)
+                            </label>
+                            <input type="number" id="phillips_screwdriver" name="phillips_screwdriver" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Screw Gauge 3D -->
+                        <div>
+                            <label for="screw_gauge_3d" class="block text-sm font-medium text-gray-700 mb-1">
+                                Screw Gauge 3D (Required: 1)
+                            </label>
+                            <input type="number" id="screw_gauge_3d" name="screw_gauge_3d" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Standoff Tool 3D -->
+                        <div>
+                            <label for="standoff_tool_3d" class="block text-sm font-medium text-gray-700 mb-1">
+                                Standoff Tool 3D (Required: 1)
+                            </label>
+                            <input type="number" id="standoff_tool_3d" name="standoff_tool_3d" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 10mm -->
+                        <div>
+                            <label for="m3_10mm" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 10mm (Required: 1)
+                            </label>
+                            <input type="number" id="m3_10mm" name="m3_10mm" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 10mm Thread -->
+                        <div>
+                            <label for="m3_10mm_thread" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 10mm Thread (Required: 1)
+                            </label>
+                            <input type="number" id="m3_10mm_thread" name="m3_10mm_thread" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 9mm Thread -->
+                        <div>
+                            <label for="m3_9mm_thread" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 9mm Thread (Required: 1)
+                            </label>
+                            <input type="number" id="m3_9mm_thread" name="m3_9mm_thread" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 20mm Thread -->
+                        <div>
+                            <label for="m3_20mm_thread" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 20mm Thread (Required: 1)
+                            </label>
+                            <input type="number" id="m3_20mm_thread" name="m3_20mm_thread" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 6mm -->
+                        <div>
+                            <label for="m3_6mm" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 6mm (Required: 1)
+                            </label>
+                            <input type="number" id="m3_6mm" name="m3_6mm" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end space-x-3">
+                        <button type="button" onclick="cancelEdit()"
+                            class="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors">
+                            <i class="fa-solid fa-times mr-2"></i>
+                            Cancel
+                        </button>
+                        <button type="submit" id="updateButton"
+                            class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-colors">
+                            <i class="fa-solid fa-save mr-2"></i>
+                            Update Cubesat
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>

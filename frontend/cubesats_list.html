@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Cubesats – SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* Table row hover effects */
+        .table-row-hover:hover {
+            background-color: #f8f7fa;
+        }
+
+        /* Smooth transitions */
+        .transition-all {
+            transition: all 0.2s ease;
+        }
+    </style>
+
+    <script defer>
+        let cubesatsData = [];
+        let filteredData = [];
+
+        function ensureAuth() {
+            const token = getToken();
+            if (!token) window.location.href = "login.html";
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+
+        function statusBadge(status) {
+            const base = "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold";
+            if (status === "working") return base + " bg-green-100 text-green-700 border border-green-200";
+            if (status === "damaged") return base + " bg-red-100 text-red-700 border border-red-200";
+            if (status === "repeating") return base + " bg-amber-100 text-amber-700 border border-amber-200";
+            return base + " bg-gray-100 text-gray-700 border border-gray-200";
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return "-";
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        async function loadCubesats() {
+            const tbody = document.getElementById("tbody");
+            const emptyEl = document.getElementById("empty");
+            tbody.innerHTML = "";
+            emptyEl.textContent = "Loading...";
+
+            try {
+                console.log("Fetching cubesats...");
+                const data = await apiFetch("/cubesats/");
+                console.log("Cubesats data received:", data);
+
+                if (!Array.isArray(data)) {
+                    throw new Error("Invalid data format: expected an array");
+                }
+
+                cubesatsData = data;
+                if (!data.length) {
+                    emptyEl.textContent = "No cubesats found.";
+                    return;
+                }
+                emptyEl.textContent = "";
+                filteredData = [...cubesatsData];
+                renderCubesats();
+            } catch (err) {
+                emptyEl.innerHTML = `<span class="text-red-500">Error loading cubesats: ${err.message}</span>`;
+                console.error("Error in loadCubesats:", err);
+            }
+        }
+
+        function renderCubesats() {
+            const tbody = document.getElementById("tbody");
+            const emptyEl = document.getElementById("empty");
+            tbody.innerHTML = "";
+
+            if (!filteredData || !Array.isArray(filteredData)) {
+                console.error("filteredData is invalid:", filteredData);
+                return;
+            }
+
+            if (!filteredData.length) {
+                emptyEl.textContent = "No cubesats found matching filters.";
+                return;
+            } else {
+                emptyEl.textContent = "";
+            }
+
+            filteredData.forEach((c) => {
+                const tr = document.createElement("tr");
+                tr.className = "table-row-hover transition-all";
+
+                // Calculate missing items
+                let missing = [];
+                const required = {
+                    structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
+                    reaction_wheel: 1, mpu: 1, gps: 1, motor_driver: 1, phillips_screwdriver: 1,
+                    screw_gauge_3d: 1, standoff_tool_3d: 1, m3_10mm: 10, m3_10mm_thread: 10,
+                    m3_9mm_thread: 10, m3_20mm_thread: 10, m3_6mm: 4
+                };
+
+                for (const [key, reqVal] of Object.entries(required)) {
+                    if ((c[key] || 0) < reqVal) {
+                        missing.push({
+                            name: key.replace(/_/g, " "),
+                            current: c[key] || 0,
+                            required: reqVal
+                        });
+                    }
+                }
+
+                const missingText = missing.length > 0
+                    ? `<button onclick="openMissingItemsModal(${c.id})" class="text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded-full border border-red-100 hover:bg-red-100 transition-colors cursor-pointer flex items-center gap-1">
+                         <i class="fa-solid fa-circle-exclamation"></i> ${missing.length} Missing Items
+                       </button>`
+                    : `<span class="text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded-full border border-green-100 flex items-center gap-1 w-fit">
+                         <i class="fa-solid fa-check"></i> Complete
+                       </span>`;
+
+                const isComplete = missing.length === 0;
+                const completeIcon = isComplete
+                    ? '<i class="fa-solid fa-circle-check text-green-500 text-lg"></i>'
+                    : '<i class="fa-solid fa-circle-xmark text-red-500 text-lg"></i>';
+
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#${c.id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">${c.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="${statusBadge(c.status)}">
+                            ${c.status.charAt(0).toUpperCase() + c.status.slice(1)}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div class="flex items-center gap-1">
+                            <i class="fa-solid fa-location-dot text-gray-400 text-xs"></i>
+                            ${c.location || "-"}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatDate(c.delivered_date)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-center">${completeIcon}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${missingText}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                        <div class="flex items-center justify-center gap-2">
+                            <a href="cubesat_edit.html?id=${c.id}" class="text-purple-600 hover:text-purple-900 p-1 rounded hover:bg-purple-50 transition-colors" title="Edit">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </a>
+                            <button onclick="deleteCubesat(${c.id})" class="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors" title="Delete">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function openMissingItemsModal(id) {
+            const cubesat = cubesatsData.find(c => c.id === id);
+            if (!cubesat) return;
+
+            const modal = document.getElementById('missingItemsModal');
+            const modalContent = document.getElementById('modalContent');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalBody = document.getElementById('modalBody');
+
+            modalTitle.textContent = `Missing Items: ${cubesat.name}`;
+
+            // Calculate missing items again for the modal
+            let missing = [];
+            const required = {
+                structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
+                reaction_wheel: 1, mpu: 1, gps: 1, motor_driver: 1, phillips_screwdriver: 1,
+                screw_gauge_3d: 1, standoff_tool_3d: 1, m3_10mm: 10, m3_10mm_thread: 10,
+                m3_9mm_thread: 10, m3_20mm_thread: 10, m3_6mm: 4
+            };
+
+            for (const [key, reqVal] of Object.entries(required)) {
+                if ((cubesat[key] || 0) < reqVal) {
+                    missing.push({
+                        name: key.replace(/_/g, " "),
+                        current: cubesat[key] || 0,
+                        required: reqVal
+                    });
+                }
+            }
+
+            if (missing.length === 0) {
+                modalBody.innerHTML = '<p class="text-green-600 font-medium text-center">No missing items!</p>';
+            } else {
+                modalBody.innerHTML = missing.map(item => `
+                    <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                                <i class="fa-solid fa-triangle-exclamation text-sm"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900 capitalize">${item.name}</p>
+                                <p class="text-xs text-red-600">Required: ${item.required}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="block text-lg font-bold text-red-700">${item.current}</span>
+                            <span class="text-xs text-red-500">Current</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            modal.classList.remove('hidden');
+            // Small delay to allow display:block to apply before opacity transition
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+                modalContent.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeMissingItemsModal() {
+            const modal = document.getElementById('missingItemsModal');
+            const modalContent = document.getElementById('modalContent');
+
+            modal.classList.add('opacity-0');
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-95');
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function filterCubesats() {
+            const nameSearch = document.getElementById('searchName').value.toLowerCase();
+            const statusFilter = document.getElementById('filterStatus').value;
+            const locationFilter = document.getElementById('filterLocation').value;
+
+            filteredData = cubesatsData.filter(c => {
+                const matchesName = (c.name || '').toLowerCase().includes(nameSearch);
+                const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
+                const matchesLocation = locationFilter === 'all' || (c.location || '') === locationFilter;
+                return matchesName && matchesStatus && matchesLocation;
+            });
+
+            renderCubesats();
+        }
+
+        async function deleteCubesat(id) {
+            if (!confirm("Are you sure you want to delete this cubesat?")) return;
+            try {
+                await apiFetch(`/cubesats/${id}`, { method: "DELETE" });
+                showNotification('Cubesat deleted successfully', 'success');
+                cubesatsData = cubesatsData.filter(c => c.id !== id);
+                filterCubesats();
+            } catch (err) {
+                console.error(err);
+                showNotification('Error deleting cubesat', 'error');
+            }
+        }
+
+        async function exportToExcel() {
+            try {
+                showNotification('Preparing Excel export...', 'info');
+
+                const token = getToken();
+                if (!token) {
+                    showNotification('Please login again', 'error');
+                    return;
+                }
+
+                // Use the full URL with API_BASE from api.js
+                const response = await fetch(`${API_BASE}/cubesats/export/excel`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Export failed: ${response.statusText}`);
+                }
+
+                // Get the blob and create download link
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `cubesats_inventory_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+                document.body.appendChild(a);
+                a.click();
+
+                // Clean up
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showNotification('Excel file downloaded successfully!', 'success');
+
+            } catch (error) {
+                console.error('Export error:', error);
+                showNotification('Failed to export Excel file: ' + error.message, 'error');
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+
+            notification.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-transform duration-300 translate-x-full`;
+            notification.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadCubesats();
+
+            // Close modal when clicking outside
+            const modal = document.getElementById('missingItemsModal');
+            if (modal) {
+                modal.addEventListener('click', function (e) {
+                    if (e.target === this) {
+                        closeMissingItemsModal();
+                    }
+                });
+            }
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span class="font-semibold text-purple-600 capitalize" id="mobile-user-role">admin</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Cubesats Inventory</h1>
+                        <p class="text-sm text-gray-500 mt-1">Overview of all CubeSat kits, their status, and missing
+                            items</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"
+                            id="user-role">admin</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Actions Bar -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-900">Cubesats Management</h2>
+                    <p class="text-sm text-gray-500">View status, location, and missing items for each kit</p>
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="exportToExcel()"
+                        class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                        <i class="fa-solid fa-file-excel mr-2 text-green-600"></i>
+                        Export Excel
+                    </button>
+                    <a href="cubesat_add.html"
+                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                        <i class="fa-solid fa-plus mr-2"></i>
+                        Add Cubesat
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="p-6 border-b border-gray-200 bg-gray-50">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="searchName" class="block text-sm font-medium text-gray-700 mb-1">Search by Name</label>
+                    <div class="relative rounded-md shadow-sm">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fa-solid fa-search text-gray-400"></i>
+                        </div>
+                        <input type="text" id="searchName" oninput="filterCubesats()"
+                            class="focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2"
+                            placeholder="Search cubesats...">
+                    </div>
+                </div>
+                <div>
+                    <label for="filterStatus" class="block text-sm font-medium text-gray-700 mb-1">Filter by
+                        Status</label>
+                    <select id="filterStatus" onchange="filterCubesats()"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm rounded-md">
+                        <option value="all">All Statuses</option>
+                        <option value="working">Working</option>
+                        <option value="damaged">Damaged</option>
+                        <option value="repeating">Repeating</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="filterLocation" class="block text-sm font-medium text-gray-700 mb-1">Filter by
+                        Location</label>
+                    <select id="filterLocation" onchange="filterCubesats()"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm rounded-md">
+                        <option value="all">All Locations</option>
+                        <option value="Ajman">Ajman</option>
+                        <option value="Sharjah">Sharjah</option>
+                        <option value="Dubai">Dubai</option>
+                        <option value="Abu Dhabi">Abu Dhabi</option>
+                        <option value="Ras Al Khaimah">Ras Al Khaimah</option>
+                        <option value="Umm Al Quwain">Umm Al Quwain</option>
+                        <option value="Fujairah">Fujairah</option>
+                        <option value="Al Ain">Al Ain</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="flex-1 p-6">
+            <div class="bg-white shadow-sm rounded-lg overflow-hidden">
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-purple-600 text-white">
+                            <tr>
+                                <th scope="col"
+                                    class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">ID</th>
+                                <th scope="col"
+                                    class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Name</th>
+                                <th scope="col"
+                                    class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
+                                <th scope="col"
+                                    class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Location
+                                </th>
+                                <th scope="col"
+                                    class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Delivered
+                                </th>
+                                <th scope="col"
+                                    class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Complete
+                                </th>
+                                <th scope="col"
+                                    class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Missing
+                                    Items</th>
+                                <th scope="col"
+                                    class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Actions
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody" class="bg-white divide-y divide-gray-200">
+                            <!-- Rows will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Empty state message -->
+                <div id="empty" class="flex items-center justify-center h-64 text-gray-500"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Missing Items Modal -->
+    <div id="missingItemsModal"
+        class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-300"
+            id="modalContent">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-gray-900" id="modalTitle">Missing Items</h3>
+                <button onclick="closeMissingItemsModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <div id="modalBody" class="space-y-3">
+                    <!-- Missing items will be injected here -->
+                </div>
+            </div>
+            <div class="p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg flex justify-end">
+                <button onclick="closeMissingItemsModal()"
+                    class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors font-medium">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>
