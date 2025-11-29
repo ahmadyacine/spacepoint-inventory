@@ -158,15 +158,7 @@ def init_db():
         """
     )
 
-    # Insert default instructors if they don't exist
-    cur.execute("""
-        INSERT INTO instructors (id, name, email, phone, location) 
-        VALUES 
-            (1, 'Instructor One', 'instructor1@spacepoint.com', '+971501234567', 'Dubai'),
-            (2, 'Instructor Two', 'instructor2@spacepoint.com', '+971501234568', 'Abu Dhabi'),
-            (3, 'Instructor Three', 'instructor3@spacepoint.com', '+971501234569', 'Sharjah')
-        ON CONFLICT (id) DO NOTHING;
-    """)
+    
 
     # Check if instructor_id column exists in users, if not add it
     cur.execute("""
@@ -220,10 +212,7 @@ def init_db():
     cur.execute("""
         INSERT INTO users (username, password, full_name, role, instructor_id) 
         VALUES 
-            ('admin', 'admin123', 'Admin User', 'admin', NULL),
-            ('ahmadyacine', 'op123', 'Operations One', 'operations', NULL),
-            ('op2', 'op123', 'Operations Two', 'operations', NULL),
-            ('inst1', 'inst123', 'Instructor One', 'instructor', 1)
+            ('admin', 'admin123', 'Admin User', 'admin', NULL)
         ON CONFLICT (username) DO NOTHING;
     """)
 
