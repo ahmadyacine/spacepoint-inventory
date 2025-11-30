@@ -67,7 +67,12 @@
                     "structures", "current_sensors", "temp_sensors", "fram", "sd_card",
                     "reaction_wheel", "mpu", "gps", "motor_driver",
                     "phillips_screwdriver", "screw_gauge_3d", "standoff_tool_3d",
-                    "m3_10mm", "m3_10mm_thread", "m3_9mm_thread", "m3_20mm_thread", "m3_6mm"
+                    "cdhs_board", "eps_board", "adcs_board",
+                    "esp32_cam", "esp32", "magnetorquer", "buck_converter_module",
+                    "li_ion_battery", "pin_socket",
+                    "m3_screws", "m3_hex_nut",
+                    "m3_9_6mm_brass_standoff", "m3_10mm_brass_standoff",
+                    "m3_10_6mm_brass_standoff", "m3_20_6mm_brass_standoff"
                 ];
 
                 if (numericFields.includes(key)) {
@@ -185,6 +190,16 @@
                 <i class="fa-solid fa-cube w-5"></i>
                 <span>Cubesats</span>
             </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
+            </a>
             <a href="instructors_list.html"
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                 <i class="fa-solid fa-user-tie w-5"></i>
@@ -263,7 +278,7 @@
                         </div>
                         <div>
                             <label class="block mb-1.5 font-medium text-gray-700">Status</label>
-                            <select name="status"
+                            <select name="status" required
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors bg-white">
                                 <option value="working">Working</option>
                                 <option value="damaged">Damaged</option>
@@ -272,7 +287,7 @@
                         </div>
                         <div>
                             <label class="block mb-1.5 font-medium text-gray-700">Location (UAE)</label>
-                            <select name="location"
+                            <select name="location" required
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors bg-white">
                                 <option value="">Select location</option>
                                 <option value="Ajman">Ajman</option>
@@ -302,20 +317,19 @@
                     </div>
                 </section>
 
-                <!-- Checklist -->
+                <!-- Components -->
                 <section class="space-y-4">
                     <h2 class="text-lg font-semibold flex items-center gap-2 text-gray-900 border-b pb-2">
                         <i class="fa-solid fa-list-check text-purple-600"></i>
-                        Checklist Items
+                        Components
                     </h2>
                     <p class="text-sm text-gray-500">
                         Enter how many of each item are inside this CubeSat kit. System will compare against the
-                        required
-                        counts.
+                        required counts.
                     </p>
 
                     <div class="grid md:grid-cols-3 lg:grid-cols-4 gap-6">
-                        <!-- Row 1 -->
+                        <!-- Core Components -->
                         <div>
                             <label class="block mb-1.5 font-medium text-gray-700">Structures (need 6)</label>
                             <input type="number" name="structures" value="6"
@@ -337,7 +351,6 @@
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
 
-                        <!-- Row 2 -->
                         <div>
                             <label class="block mb-1.5 font-medium text-gray-700">SD Card (need 1)</label>
                             <input type="number" name="sd_card" value="1"
@@ -359,12 +372,23 @@
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
 
-                        <!-- Row 3 -->
                         <div>
                             <label class="block mb-1.5 font-medium text-gray-700">Motor Driver (need 1)</label>
                             <input type="number" name="motor_driver" value="1"
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
+                    </div>
+                </section>
+
+                <!-- Tools, Boards & Electronics -->
+                <section class="space-y-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2 text-gray-900 border-b pb-2">
+                        <i class="fa-solid fa-screwdriver-wrench text-purple-600"></i>
+                        Tools, Boards & Electronics
+                    </h2>
+
+                    <div class="grid md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <!-- Tools -->
                         <div>
                             <label class="block mb-1.5 font-medium text-gray-700">Phillips Screwdriver (need 1)</label>
                             <input type="number" name="phillips_screwdriver" value="1"
@@ -381,30 +405,97 @@
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
 
-                        <!-- Row 4 -->
+                        <!-- Boards -->
                         <div>
-                            <label class="block mb-1.5 font-medium text-gray-700">M3 10mm</label>
-                            <input type="number" name="m3_10mm" value="10"
+                            <label class="block mb-1.5 font-medium text-gray-700">CDHS Board (need 1)</label>
+                            <input type="number" name="cdhs_board" value="1"
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-medium text-gray-700">M3 10mm + thread</label>
-                            <input type="number" name="m3_10mm_thread" value="10"
+                            <label class="block mb-1.5 font-medium text-gray-700">EPS Board (need 1)</label>
+                            <input type="number" name="eps_board" value="1"
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-medium text-gray-700">M3 9mm + thread</label>
-                            <input type="number" name="m3_9mm_thread" value="10"
+                            <label class="block mb-1.5 font-medium text-gray-700">ADCS Board (need 1)</label>
+                            <input type="number" name="adcs_board" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+
+                        <!-- Electronics -->
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">ESP32-CAM (need 1)</label>
+                            <input type="number" name="esp32_cam" value="1"
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-medium text-gray-700">M3 20mm + thread</label>
-                            <input type="number" name="m3_20mm_thread" value="10"
+                            <label class="block mb-1.5 font-medium text-gray-700">ESP32 (need 1)</label>
+                            <input type="number" name="esp32" value="1"
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
                         <div>
-                            <label class="block mb-1.5 font-medium text-gray-700">M3 6mm</label>
-                            <input type="number" name="m3_6mm" value="4"
+                            <label class="block mb-1.5 font-medium text-gray-700">Magnetorquer (need 1)</label>
+                            <input type="number" name="magnetorquer" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Buck Converter Module (need 1)</label>
+                            <input type="number" name="buck_converter_module" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Li Ion Battery (need 1)</label>
+                            <input type="number" name="li_ion_battery" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">Pin Socket (need 1)</label>
+                            <input type="number" name="pin_socket" value="1"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Mechanical Hardware -->
+                <section class="space-y-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2 text-gray-900 border-b pb-2">
+                        <i class="fa-solid fa-screwdriver text-purple-600"></i>
+                        Mechanical Hardware
+                    </h2>
+
+                    <div class="grid md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 Screws (need 20)</label>
+                            <input type="number" name="m3_screws" value="20"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 Hex Nut (need 4)</label>
+                            <input type="number" name="m3_hex_nut" value="4"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 9+6mm Brass Standoff (need
+                                4)</label>
+                            <input type="number" name="m3_9_6mm_brass_standoff" value="4"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 10mm Brass Standoff (need
+                                4)</label>
+                            <input type="number" name="m3_10mm_brass_standoff" value="4"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 10+6mm Brass Standoff (need
+                                4)</label>
+                            <input type="number" name="m3_10_6mm_brass_standoff" value="4"
+                                class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
+                        </div>
+                        <div>
+                            <label class="block mb-1.5 font-medium text-gray-700">M3 20+6mm Brass Standoff (need
+                                12)</label>
+                            <input type="number" name="m3_20_6mm_brass_standoff" value="12"
                                 class="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors" />
                         </div>
                     </div>

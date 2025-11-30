@@ -9,9 +9,9 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
+        /* body {
             font-family: 'Inter', sans-serif;
-        }
+        } */
 
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
@@ -69,6 +69,48 @@
         let cubesatsData = [];
         let workshopsData = [];
         let socket = null;
+
+        // Required counts for each item in a complete CubeSat kit
+        const REQUIRED_COUNTS = {
+            // Structure & mechanics
+            structures: 6,
+            reaction_wheel: 1,
+
+            // Electronics (sensors & storage)
+            current_sensors: 2,
+            temp_sensors: 1,
+            fram: 1,
+            sd_card: 1,
+            mpu: 1,
+            gps: 1,
+            motor_driver: 1,
+
+            // Boards
+            cdhs_board: 1,
+            eps_board: 1,
+            adcs_board: 1,
+
+            // ESP32 & modules
+            esp32_cam: 1,
+            esp32: 1,
+            magnetorquer: 1,
+            buck_converter_module: 1,
+            li_ion_battery: 1,
+            pin_socket: 4,
+
+            // Tools
+            phillips_screwdriver: 1,
+            screw_gauge_3d: 1,
+            standoff_tool_3d: 1,
+
+            // Screws & standoffs
+            m3_screws: 20,
+            m3_hex_nut: 4,
+            m3_9_6mm_brass_standoff: 4,
+            m3_10mm_brass_standoff: 4,
+            m3_10_6mm_brass_standoff: 4,
+            m3_20_6mm_brass_standoff: 12
+        };
 
         async function apiFetch(endpoint, options = {}) {
             const token = sessionStorage.getItem("token");
@@ -131,7 +173,7 @@
 
             socket = new WebSocket(`${WS_BASE_URL}/ws/${currentUser.id}`);
 
-            socket.onopen = function (e) {
+            socket.onopen = function () {
                 console.log("WebSocket connection established");
             };
 
@@ -146,9 +188,9 @@
 
             socket.onclose = function (event) {
                 if (event.wasClean) {
-                    console.log(`WebSocket connection closed cleanly, code=${event.code} reason=${event.reason}`);
+                    console.log(`WebSocket closed cleanly, code=${event.code} reason=${event.reason}`);
                 } else {
-                    console.log('WebSocket connection died');
+                    console.log('WebSocket connection died, reconnecting...');
                     setTimeout(connectWebSocket, 5000);
                 }
             };
@@ -167,7 +209,18 @@
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = 'toast show bg-white border-l-4 border-purple-600 shadow-lg rounded-r-lg p-4 mb-4 flex items-start gap-3 min-w-[300px]';
-            toast.innerHTML = `<div class="text-purple-600 mt-0.5"><i class="fa-solid fa-bell"></i></div><div><h4 class="font-semibold text-gray-900 text-sm">${title}</h4><p class="text-sm text-gray-600 mt-1">${message}</p></div><button onclick="this.parentElement.remove()" class="ml-auto text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark"></i></button>`;
+            toast.innerHTML = `
+                <div class="text-purple-600 mt-0.5">
+                    <i class="fa-solid fa-bell"></i>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-gray-900 text-sm">${title}</h4>
+                    <p class="text-sm text-gray-600 mt-1">${message}</p>
+                </div>
+                <button onclick="this.parentElement.remove()" class="ml-auto text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `;
             container.appendChild(toast);
             setTimeout(() => {
                 toast.classList.remove('show');
@@ -189,8 +242,12 @@
             if (!dateStr) return "N/A";
             const date = new Date(dateStr);
             return date.toLocaleString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric',
-                hour: 'numeric', minute: '2-digit', hour12: true
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
             });
         }
 
@@ -204,7 +261,8 @@
                 'deployed': 'bg-indigo-100 text-indigo-800',
                 'retired': 'bg-red-100 text-red-800'
             };
-            return `<inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles['concept']}`;
+            // Return a class string only (used inside class="")
+            return `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles['concept']}`;
         }
 
         async function loadCubesats() {
@@ -227,18 +285,15 @@
                 myCubesats.forEach((c) => {
                     const tr = document.createElement("tr");
                     tr.className = "border-b border-gray-100 transition-all table-row-hover";
+
                     const location = c.location || '<span class="text-gray-400 italic">Not set</span>';
-                    const delivered = c.received_date ? new Date(c.received_date).toLocaleDateString() : '<span class="text-gray-400 italic">Pending</span>';
+                    const delivered = c.delivered_date
+                        ? new Date(c.delivered_date).toLocaleDateString()
+                        : '<span class="text-gray-400 italic">Pending</span>';
 
                     let missing = [];
-                    const required = {
-                        structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
-                        reaction_wheel: 1, mpu: 1, gps: 1, motor_driver: 1, phillips_screwdriver: 1,
-                        screw_gauge_3d: 1, standoff_tool_3d: 1, m3_10mm: 10, m3_10mm_thread: 10,
-                        m3_9mm_thread: 10, m3_20mm_thread: 10, m3_6mm: 4
-                    };
 
-                    for (const [key, reqVal] of Object.entries(required)) {
+                    for (const [key, reqVal] of Object.entries(REQUIRED_COUNTS)) {
                         if ((c[key] || 0) < reqVal) {
                             missing.push({
                                 name: key.replace(/_/g, " "),
@@ -248,16 +303,36 @@
                         }
                     }
 
-                    const missingDisplay = missing.length > 0 ?
-                        `<button onclick="openMissingItemsModal(${c.id})" class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 hover:bg-red-100 transition-colors"><i class="fa-solid fa-triangle-exclamation"></i> ${missing.length} Missing</button>` :
-                        `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100"><i class="fa-solid fa-check"></i> Complete</span>`;
+                    const missingDisplay = missing.length > 0
+                        ? `<button onclick="openMissingItemsModal(${c.id})"
+                               class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 hover:bg-red-100 transition-colors">
+                               <i class="fa-solid fa-triangle-exclamation"></i> ${missing.length} Missing
+                           </button>`
+                        : `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
+                               <i class="fa-solid fa-check"></i> Complete
+                           </span>`;
 
-                    tr.innerHTML = `<td class="px-6 py-4 text-sm font-medium text-gray-900">#${c.id}</td>
-                        <td class="px-6 py-4"><div class="text-sm font-medium text-gray-900">${c.name || "-"}</div></td>
-                        <td class="px-6 py-4"><div class="${statusBadge(c.status)}"><i class="fa-solid fa-circle text-[8px]"></i> <span class="capitalize">${c.status}</span></div></td>
-                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${location}</div></td>
-                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${delivered}</div></td>
-                        <td class="px-6 py-4">${missingDisplay}</td>`;
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 text-sm font-medium text-gray-900">#${c.id}</td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-medium text-gray-900">${c.name || "-"}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="${statusBadge(c.status)}">
+                                <i class="fa-solid fa-circle text-[8px]"></i>
+                                <span class="capitalize">${c.status}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm text-gray-700">${location}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm text-gray-700">${delivered}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            ${missingDisplay}
+                        </td>
+                    `;
                     tbody.appendChild(tr);
                 });
             } catch (err) {
@@ -275,14 +350,8 @@
             document.getElementById('missingItemsTitle').textContent = `Missing Items: ${cubesat.name}`;
 
             let missing = [];
-            const required = {
-                structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
-                reaction_wheel: 1, mpu: 1, gps: 1, motor_driver: 1, phillips_screwdriver: 1,
-                screw_gauge_3d: 1, standoff_tool_3d: 1, m3_10mm: 10, m3_10mm_thread: 10,
-                m3_9mm_thread: 10, m3_20mm_thread: 10, m3_6mm: 4
-            };
 
-            for (const [key, reqVal] of Object.entries(required)) {
+            for (const [key, reqVal] of Object.entries(REQUIRED_COUNTS)) {
                 if ((cubesat[key] || 0) < reqVal) {
                     missing.push({
                         name: key.replace(/_/g, " "),
@@ -295,7 +364,23 @@
             if (missing.length === 0) {
                 modalBody.innerHTML = '<p class="text-green-600 font-medium text-center">No missing items!</p>';
             } else {
-                modalBody.innerHTML = missing.map(item => `<div class="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600"><i class="fa-solid fa-triangle-exclamation text-sm"></i></div><div><p class="font-medium text-gray-900 capitalize">${item.name}</p><p class="text-xs text-red-600">Required: ${item.required}</p></div></div><div class="text-right"><span class="block text-lg font-bold text-red-700">${item.current}</span><span class="text-xs text-red-500">Current</span></div></div>`).join('');
+                modalBody.innerHTML = missing.map(item => `
+                    <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600">
+                                <i class="fa-solid fa-triangle-exclamation text-sm"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900 capitalize">${item.name}</p>
+                                <p class="text-xs text-red-600">Required: ${item.required}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="block text-lg font-bold text-red-700">${item.current}</span>
+                            <span class="text-xs text-red-500">Current</span>
+                        </div>
+                    </div>
+                `).join('');
             }
 
             modal.classList.remove('hidden');
@@ -317,7 +402,12 @@
 
             try {
                 const workshops = await apiFetch("/workshops/");
-                const instructorWorkshops = workshops.filter(w => w.instructor_id === currentInstructorId && (w.status === 'upcoming' || w.status === 'in_progress')).sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+                const instructorWorkshops = workshops
+                    .filter(w =>
+                        w.instructor_id === currentInstructorId &&
+                        (w.status === 'upcoming' || w.status === 'in_progress')
+                    )
+                    .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
                 workshopsData = instructorWorkshops;
 
                 if (!instructorWorkshops.length) {
@@ -331,11 +421,38 @@
                     tr.className = "border-b border-gray-100 transition-all table-row-hover";
                     const startDate = formatDateTime(w.start_date);
 
-                    tr.innerHTML = `<td class="px-6 py-4"><div class="text-sm font-medium text-gray-900">${w.title}</div><div class="mt-1"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${w.workshop_type === 'demo' ? 'bg-purple-100 text-purple-800' : w.workshop_type === 'online' ? 'bg-blue-100 text-blue-800' : w.workshop_type === 'hands_on' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}">${w.workshop_type.replace('_', ' ')}</span></div></td>
-                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${startDate}</div></td>
-                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${w.location || "TBD"}</div></td>
-                        <td class="px-6 py-4"><div class="text-sm text-gray-700">${w.current_participants} / ${w.max_participants || '∞'}</div></td>
-                        <td class="px-6 py-4 text-right"><button onclick="openWorkshopModal(${w.id})" class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">View Details</button></td>`;
+                    tr.innerHTML = `
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-medium text-gray-900">${w.title}</div>
+                            <div class="mt-1">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${w.workshop_type === 'demo'
+                            ? 'bg-purple-100 text-purple-800'
+                            : w.workshop_type === 'online'
+                                ? 'bg-blue-100 text-blue-800'
+                                : w.workshop_type === 'hands_on'
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-amber-100 text-amber-800'
+                        }">
+                                    ${w.workshop_type.replace('_', ' ')}
+                                </span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm text-gray-700">${startDate}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm text-gray-700">${w.location || "TBD"}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm text-gray-700">${w.current_participants} / ${w.max_participants || '∞'}</div>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <button onclick="openWorkshopModal(${w.id})"
+                                class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">
+                                View Details
+                            </button>
+                        </td>
+                    `;
                     tbody.appendChild(tr);
                 });
             } catch (err) {
@@ -353,8 +470,10 @@
             document.getElementById('modalStatus').textContent = workshop.status.replace('_', ' ');
             document.getElementById('modalDescription').textContent = workshop.description || "No description provided.";
             document.getElementById('modalLocation').textContent = workshop.location || "TBD";
-            document.getElementById('modalDate').textContent = `${formatDateTime(workshop.start_date)} - ${formatDateTime(workshop.end_date)}`;
-            document.getElementById('modalParticipants').textContent = `${workshop.current_participants} / ${workshop.max_participants || '∞'}`;
+            document.getElementById('modalDate').textContent =
+                `${formatDateTime(workshop.start_date)} - ${formatDateTime(workshop.end_date)}`;
+            document.getElementById('modalParticipants').textContent =
+                `${workshop.current_participants} / ${workshop.max_participants || '∞'}`;
             document.getElementById('modalRequirements').textContent = workshop.requirements || "No specific requirements.";
             document.getElementById('modalNotes').textContent = workshop.notes || "No additional notes.";
 
@@ -387,7 +506,8 @@
 
                 notifications.forEach(n => {
                     const tr = document.createElement("tr");
-                    tr.className = `border-b border-gray-100 transition-all table-row-hover ${!n.is_read ? 'bg-purple-50' : ''}`;
+                    tr.className =
+                        `border-b border-gray-100 transition-all table-row-hover ${!n.is_read ? 'bg-purple-50' : ''}`;
                     const date = formatDateTime(n.created_at);
 
                     let actionBtn = '';
@@ -396,18 +516,37 @@
                     let titleClass = 'text-sm text-gray-900 font-medium';
 
                     if (n.type === 'receipt_approval' && !n.is_read) {
-                        actionBtn = `<button onclick="openReceiptModal(${n.related_entity_id}, ${n.id}); event.stopPropagation();" class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">Review & Approve</button>`;
+                        actionBtn = `
+                            <button onclick="openReceiptModal(${n.related_entity_id}, ${n.id}); event.stopPropagation();"
+                                class="text-purple-600 hover:text-purple-900 text-sm font-medium hover:underline">
+                                Review & Approve
+                            </button>`;
                         rowClickAttr = `onclick="openReceiptModal(${n.related_entity_id}, ${n.id})"`;
                         cursorStyle = 'cursor: pointer;';
                         titleClass += ' hover:text-purple-600 transition-colors';
                     } else if (n.type === 'receipt_approval' && n.is_read) {
-                        actionBtn = `<span class="text-green-600 text-sm"><i class="fa-solid fa-check"></i> Approved</span>`;
+                        actionBtn = `<span class="text-green-600 text-sm">
+                            <i class="fa-solid fa-check"></i> Approved
+                        </span>`;
                     }
 
-                    tr.innerHTML = `<td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 capitalize">${n.type.replace('_', ' ')}</span></td>
-                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}"><div class="${titleClass}">${n.title}</div><div class="text-sm text-gray-500">${n.message}</div></td>
-                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}"><div class="text-sm text-gray-500">${date}</div></td>
-                        <td class="px-6 py-4 text-right">${actionBtn}</td>`;
+                    tr.innerHTML = `
+                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 capitalize">
+                                ${n.type.replace('_', ' ')}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}">
+                            <div class="${titleClass}">${n.title}</div>
+                            <div class="text-sm text-gray-500">${n.message}</div>
+                        </td>
+                        <td class="px-6 py-4" ${rowClickAttr} style="${cursorStyle}">
+                            <div class="text-sm text-gray-500">${date}</div>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            ${actionBtn}
+                        </td>
+                    `;
                     tbody.appendChild(tr);
                 });
             } catch (err) {
@@ -437,7 +576,10 @@
                 Object.entries(items).forEach(([key, value]) => {
                     const li = document.createElement('li');
                     li.className = 'flex justify-between text-sm';
-                    li.innerHTML = `<span class="text-gray-700 capitalize">${key.replace(/_/g, ' ')}</span><span class="font-bold text-gray-900">${value} units</span>`;
+                    li.innerHTML = `
+                        <span class="text-gray-700 capitalize">${key.replace(/_/g, ' ')}</span>
+                        <span class="font-bold text-gray-900">${value} units</span>
+                    `;
                     itemsList.appendChild(li);
                 });
 
@@ -500,6 +642,7 @@
             connectWebSocket();
         });
     </script>
+
 </head>
 
 <body class="bg-gray-50 min-h-screen flex">
@@ -534,6 +677,9 @@
             <a href="instructor_dashboard.html"
                 class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold"><i
                     class="fa-solid fa-gauge-high w-5"></i><span>Dashboard</span></a>
+            <a href="cubesat_check.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"><i
+                    class="fa-solid fa-clipboard-check w-5"></i><span>CubeSat Check</span></a>
             <a href="notifications.html"
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"><i
                     class="fa-solid fa-bell w-5"></i><span>Notifications</span></a>

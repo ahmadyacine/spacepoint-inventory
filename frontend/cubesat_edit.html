@@ -129,15 +129,29 @@
             document.getElementById('gps').value = cubesat.gps || 0;
             document.getElementById('motor_driver').value = cubesat.motor_driver || 0;
 
-            // Tools and Hardware
+            // Tools & Boards & Electronics
             document.getElementById('phillips_screwdriver').value = cubesat.phillips_screwdriver || 0;
             document.getElementById('screw_gauge_3d').value = cubesat.screw_gauge_3d || 0;
             document.getElementById('standoff_tool_3d').value = cubesat.standoff_tool_3d || 0;
-            document.getElementById('m3_10mm').value = cubesat.m3_10mm || 0;
-            document.getElementById('m3_10mm_thread').value = cubesat.m3_10mm_thread || 0;
-            document.getElementById('m3_9mm_thread').value = cubesat.m3_9mm_thread || 0;
-            document.getElementById('m3_20mm_thread').value = cubesat.m3_20mm_thread || 0;
-            document.getElementById('m3_6mm').value = cubesat.m3_6mm || 0;
+
+            document.getElementById('cdhs_board').value = cubesat.cdhs_board || 0;
+            document.getElementById('eps_board').value = cubesat.eps_board || 0;
+            document.getElementById('adcs_board').value = cubesat.adcs_board || 0;
+
+            document.getElementById('esp32_cam').value = cubesat.esp32_cam || 0;
+            document.getElementById('esp32').value = cubesat.esp32 || 0;
+            document.getElementById('magnetorquer').value = cubesat.magnetorquer || 0;
+            document.getElementById('buck_converter_module').value = cubesat.buck_converter_module || 0;
+            document.getElementById('li_ion_battery').value = cubesat.li_ion_battery || 0;
+            document.getElementById('pin_socket').value = cubesat.pin_socket || 0;
+
+            // Mechanical hardware
+            document.getElementById('m3_screws').value = cubesat.m3_screws || 0;
+            document.getElementById('m3_hex_nut').value = cubesat.m3_hex_nut || 0;
+            document.getElementById('m3_9_6mm_brass_standoff').value = cubesat.m3_9_6mm_brass_standoff || 0;
+            document.getElementById('m3_10mm_brass_standoff').value = cubesat.m3_10mm_brass_standoff || 0;
+            document.getElementById('m3_10_6mm_brass_standoff').value = cubesat.m3_10_6mm_brass_standoff || 0;
+            document.getElementById('m3_20_6mm_brass_standoff').value = cubesat.m3_20_6mm_brass_standoff || 0;
         }
 
         async function updateCubesat(event) {
@@ -150,6 +164,8 @@
                 location: formData.get('location'),
                 delivered_date: formData.get('delivered_date'),
                 instructor_id: formData.get('instructor_id') ? parseInt(formData.get('instructor_id')) : null,
+
+                // Components
                 structures: parseInt(formData.get('structures')) || 0,
                 current_sensors: parseInt(formData.get('current_sensors')) || 0,
                 temp_sensors: parseInt(formData.get('temp_sensors')) || 0,
@@ -159,14 +175,30 @@
                 mpu: parseInt(formData.get('mpu')) || 0,
                 gps: parseInt(formData.get('gps')) || 0,
                 motor_driver: parseInt(formData.get('motor_driver')) || 0,
+
+                // Tools & Boards & Electronics
                 phillips_screwdriver: parseInt(formData.get('phillips_screwdriver')) || 0,
                 screw_gauge_3d: parseInt(formData.get('screw_gauge_3d')) || 0,
                 standoff_tool_3d: parseInt(formData.get('standoff_tool_3d')) || 0,
-                m3_10mm: parseInt(formData.get('m3_10mm')) || 0,
-                m3_10mm_thread: parseInt(formData.get('m3_10mm_thread')) || 0,
-                m3_9mm_thread: parseInt(formData.get('m3_9mm_thread')) || 0,
-                m3_20mm_thread: parseInt(formData.get('m3_20mm_thread')) || 0,
-                m3_6mm: parseInt(formData.get('m3_6mm')) || 0
+
+                cdhs_board: parseInt(formData.get('cdhs_board')) || 0,
+                eps_board: parseInt(formData.get('eps_board')) || 0,
+                adcs_board: parseInt(formData.get('adcs_board')) || 0,
+
+                esp32_cam: parseInt(formData.get('esp32_cam')) || 0,
+                esp32: parseInt(formData.get('esp32')) || 0,
+                magnetorquer: parseInt(formData.get('magnetorquer')) || 0,
+                buck_converter_module: parseInt(formData.get('buck_converter_module')) || 0,
+                li_ion_battery: parseInt(formData.get('li_ion_battery')) || 0,
+                pin_socket: parseInt(formData.get('pin_socket')) || 0,
+
+                // Mechanical hardware
+                m3_screws: parseInt(formData.get('m3_screws')) || 0,
+                m3_hex_nut: parseInt(formData.get('m3_hex_nut')) || 0,
+                m3_9_6mm_brass_standoff: parseInt(formData.get('m3_9_6mm_brass_standoff')) || 0,
+                m3_10mm_brass_standoff: parseInt(formData.get('m3_10mm_brass_standoff')) || 0,
+                m3_10_6mm_brass_standoff: parseInt(formData.get('m3_10_6mm_brass_standoff')) || 0,
+                m3_20_6mm_brass_standoff: parseInt(formData.get('m3_20_6mm_brass_standoff')) || 0
             };
 
             // Basic validation
@@ -323,6 +355,16 @@
                 class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
                 <i class="fa-solid fa-cube w-5"></i>
                 <span>Cubesats</span>
+            </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
             </a>
             <a href="instructors_list.html"
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
@@ -552,9 +594,9 @@
                         </div>
                     </div>
 
-                    <!-- Tools and Hardware Section -->
+                    <!-- Tools, Boards & Electronics Section -->
                     <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h2 class="text-lg font-semibold text-gray-900">Tools and Hardware</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">Tools, Boards & Electronics</h2>
                     </div>
 
                     <div class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -585,48 +627,145 @@
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
                         </div>
 
-                        <!-- M3 10mm -->
+                        <!-- CDHS Board -->
                         <div>
-                            <label for="m3_10mm" class="block text-sm font-medium text-gray-700 mb-1">
-                                M3 10mm (Required: 1)
+                            <label for="cdhs_board" class="block text-sm font-medium text-gray-700 mb-1">
+                                CDHS Board (Required: 1)
                             </label>
-                            <input type="number" id="m3_10mm" name="m3_10mm" min="0"
+                            <input type="number" id="cdhs_board" name="cdhs_board" min="0"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
                         </div>
 
-                        <!-- M3 10mm Thread -->
+                        <!-- EPS Board -->
                         <div>
-                            <label for="m3_10mm_thread" class="block text-sm font-medium text-gray-700 mb-1">
-                                M3 10mm Thread (Required: 1)
+                            <label for="eps_board" class="block text-sm font-medium text-gray-700 mb-1">
+                                EPS Board (Required: 1)
                             </label>
-                            <input type="number" id="m3_10mm_thread" name="m3_10mm_thread" min="0"
+                            <input type="number" id="eps_board" name="eps_board" min="0"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
                         </div>
 
-                        <!-- M3 9mm Thread -->
+                        <!-- ADCS Board -->
                         <div>
-                            <label for="m3_9mm_thread" class="block text-sm font-medium text-gray-700 mb-1">
-                                M3 9mm Thread (Required: 1)
+                            <label for="adcs_board" class="block text-sm font-medium text-gray-700 mb-1">
+                                ADCS Board (Required: 1)
                             </label>
-                            <input type="number" id="m3_9mm_thread" name="m3_9mm_thread" min="0"
+                            <input type="number" id="adcs_board" name="adcs_board" min="0"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
                         </div>
 
-                        <!-- M3 20mm Thread -->
+                        <!-- ESP32-CAM -->
                         <div>
-                            <label for="m3_20mm_thread" class="block text-sm font-medium text-gray-700 mb-1">
-                                M3 20mm Thread (Required: 1)
+                            <label for="esp32_cam" class="block text-sm font-medium text-gray-700 mb-1">
+                                ESP32-CAM (Required: 1)
                             </label>
-                            <input type="number" id="m3_20mm_thread" name="m3_20mm_thread" min="0"
+                            <input type="number" id="esp32_cam" name="esp32_cam" min="0"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
                         </div>
 
-                        <!-- M3 6mm -->
+                        <!-- ESP32 -->
                         <div>
-                            <label for="m3_6mm" class="block text-sm font-medium text-gray-700 mb-1">
-                                M3 6mm (Required: 1)
+                            <label for="esp32" class="block text-sm font-medium text-gray-700 mb-1">
+                                ESP32 (Required: 1)
                             </label>
-                            <input type="number" id="m3_6mm" name="m3_6mm" min="0"
+                            <input type="number" id="esp32" name="esp32" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Magnetorquer -->
+                        <div>
+                            <label for="magnetorquer" class="block text-sm font-medium text-gray-700 mb-1">
+                                Magnetorquer (Required: 1)
+                            </label>
+                            <input type="number" id="magnetorquer" name="magnetorquer" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Buck Converter Module -->
+                        <div>
+                            <label for="buck_converter_module" class="block text-sm font-medium text-gray-700 mb-1">
+                                Buck Converter Module (Required: 1)
+                            </label>
+                            <input type="number" id="buck_converter_module" name="buck_converter_module" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Li-ion Battery -->
+                        <div>
+                            <label for="li_ion_battery" class="block text-sm font-medium text-gray-700 mb-1">
+                                Li-ion Battery (Required: 1)
+                            </label>
+                            <input type="number" id="li_ion_battery" name="li_ion_battery" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- Pin Socket -->
+                        <div>
+                            <label for="pin_socket" class="block text-sm font-medium text-gray-700 mb-1">
+                                Pin Socket (Required: 1)
+                            </label>
+                            <input type="number" id="pin_socket" name="pin_socket" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+                    </div>
+
+                    <!-- Mechanical Hardware Section -->
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <h2 class="text-lg font-semibold text-gray-900">Mechanical Hardware</h2>
+                    </div>
+
+                    <div class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- M3 Screws -->
+                        <div>
+                            <label for="m3_screws" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 Screws (Required: 20)
+                            </label>
+                            <input type="number" id="m3_screws" name="m3_screws" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 Hex Nut -->
+                        <div>
+                            <label for="m3_hex_nut" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 Hex Nut (Required: 4)
+                            </label>
+                            <input type="number" id="m3_hex_nut" name="m3_hex_nut" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 9+6mm Brass Standoff -->
+                        <div>
+                            <label for="m3_9_6mm_brass_standoff" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 9+6mm Brass Standoff (Required: 4)
+                            </label>
+                            <input type="number" id="m3_9_6mm_brass_standoff" name="m3_9_6mm_brass_standoff" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 10mm Brass Standoff -->
+                        <div>
+                            <label for="m3_10mm_brass_standoff" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 10mm Brass Standoff (Required: 4)
+                            </label>
+                            <input type="number" id="m3_10mm_brass_standoff" name="m3_10mm_brass_standoff" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 10+6mm Brass Standoff -->
+                        <div>
+                            <label for="m3_10_6mm_brass_standoff" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 10+6mm Brass Standoff (Required: 4)
+                            </label>
+                            <input type="number" id="m3_10_6mm_brass_standoff" name="m3_10_6mm_brass_standoff" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                        </div>
+
+                        <!-- M3 20+6mm Brass Standoff -->
+                        <div>
+                            <label for="m3_20_6mm_brass_standoff" class="block text-sm font-medium text-gray-700 mb-1">
+                                M3 20+6mm Brass Standoff (Required: 12)
+                            </label>
+                            <input type="number" id="m3_20_6mm_brass_standoff" name="m3_20_6mm_brass_standoff" min="0"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-purple-500 focus:border-purple-500">
                         </div>
                     </div>

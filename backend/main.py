@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db
-from .routers import auth, users, instructors, cubesats, workshops, dashboard, receipts, notifications, websockets
+from .routers import auth, users, instructors, cubesats, workshops, dashboard, receipts, notifications, websockets, session_logs, components
 
 app = FastAPI(title="SpacePoint Inventory API")
 
@@ -31,6 +31,9 @@ app.include_router(dashboard.router)
 app.include_router(receipts.router)
 app.include_router(notifications.router)
 app.include_router(websockets.router)
+app.include_router(session_logs.router)
+app.include_router(components.router)
+
 
 
 from fastapi.staticfiles import StaticFiles

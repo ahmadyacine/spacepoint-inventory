@@ -56,9 +56,37 @@
     <script defer>
         let instructorsData = [];
 
+        let currentUser = null;
+
         function ensureAuth() {
-            const token = getToken();
-            if (!token) window.location.href = "login.html";
+            const token = sessionStorage.getItem("token");
+            const role = sessionStorage.getItem("role");
+            const username = sessionStorage.getItem("username");
+
+            if (!token || !role) {
+                window.location.href = "login.html";
+                return;
+            }
+
+            currentUser = {
+                role: role,
+                username: username
+            };
+
+            if (currentUser.role !== "admin" && currentUser.role !== "operations") {
+                alert("Access denied. Admin/Operations only.");
+                window.location.href = "login.html";
+                return;
+            }
+
+            document.getElementById("user-role").textContent = currentUser.role;
+            document.getElementById("mobile-user-role").textContent = currentUser.role;
+
+            // Hide user management features for non-admin users
+            if (currentUser.role !== "admin") {
+                const userElements = document.querySelectorAll('[data-admin-only]');
+                userElements.forEach(el => el.style.display = 'none');
+            }
         }
 
         function toggleSidebar() {
@@ -269,6 +297,16 @@
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                 <i class="fa-solid fa-cube w-5"></i>
                 <span>Cubesats</span>
+            </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
             </a>
             <a href="instructors_list.html"
                 class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">

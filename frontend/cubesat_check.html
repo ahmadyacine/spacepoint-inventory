@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CubeSat Check - SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        .sidebar {
+            transition: transform 0.3s ease-in-out;
+        }
+    </style>
+    <script src="js/api.js"></script>
+    <script>
+        let currentUser = null;
+
+        function ensureAuth() {
+            const token = sessionStorage.getItem("token");
+            const role = sessionStorage.getItem("role");
+            const username = sessionStorage.getItem("username");
+            const instructorId = sessionStorage.getItem("instructor_id");
+            const userId = sessionStorage.getItem("user_id");
+
+            if (!token || !role) {
+                window.location.href = "login.html";
+                return;
+            }
+
+            currentUser = {
+                role: role,
+                username: username,
+                instructor_id: instructorId ? parseInt(instructorId) : null,
+                id: userId ? parseInt(userId) : null
+            };
+
+            if (currentUser.role !== "instructor") {
+                alert("Access denied. Instructors only.");
+                window.location.href = "login.html";
+                return;
+            }
+
+            document.getElementById("user-role").textContent = currentUser.role;
+            document.getElementById("mobile-user-role").textContent = currentUser.role;
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        async function loadCubesats() {
+            const cubesatSelect = document.getElementById('cubesatSelect');
+            try {
+                const cubesats = await apiFetch('/cubesats/');
+                // Filter for current instructor's cubesats
+                const myCubesats = cubesats.filter(c => c.instructor_id === currentUser.instructor_id);
+
+                cubesatSelect.innerHTML = '<option value="">Select a CubeSat...</option>' +
+                    myCubesats.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            } catch (error) {
+                console.error('Error loading cubesats:', error);
+                cubesatSelect.innerHTML = '<option value="">Error loading CubeSats</option>';
+            }
+        }
+
+        // Default expected counts for each item (adjust numbers as needed)
+        const DEFAULT_COUNTS = {
+            // Structure & mechanics
+            structures: 6,
+            reaction_wheel: 1,
+
+            // Electronics (sensors & storage)
+            current_sensors: 2,
+            temp_sensors: 1,
+            fram: 1,
+            sd_card: 1,
+            mpu: 1,
+            gps: 1,
+            motor_driver: 1,
+
+            // Boards
+            cdhs_board: 1,
+            eps_board: 1,
+            adcs_board: 1,
+
+            // ESP32 & modules
+            esp32_cam: 1,
+            esp32: 1,
+            magnetorquer: 1,
+            buck_converter_module: 1,
+            li_ion_battery: 1,
+            pin_socket: 4,
+
+            // Tools
+            phillips_screwdriver: 1,
+            screw_gauge_3d: 1,
+            standoff_tool_3d: 1,
+
+            // Screws & standoffs
+            m3_screws: 20,
+            m3_hex_nut: 4,
+            m3_9_6mm_brass_standoff: 4,
+            m3_10mm_brass_standoff: 4,
+            m3_10_6mm_brass_standoff: 4,
+            m3_20_6mm_brass_standoff: 12
+        };
+
+        function fillDefaults() {
+            for (const [key, value] of Object.entries(DEFAULT_COUNTS)) {
+                const input = document.querySelector(`input[name="${key}"]`);
+                if (input) {
+                    input.value = value;
+                }
+            }
+        }
+
+        function showResult(result) {
+            const iconDiv = document.getElementById('resultIcon');
+            const title = document.getElementById('resultTitle');
+            const message = document.getElementById('resultMessage');
+            const resultModal = document.getElementById('resultModal');
+
+            if (result.status === 'complete') {
+                iconDiv.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4';
+                iconDiv.innerHTML = `<svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>`;
+                title.innerText = 'Check Complete';
+                message.innerText = 'All items are accounted for! Good job.';
+            } else {
+                iconDiv.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4';
+                iconDiv.innerHTML = `<svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`;
+                title.innerText = 'Missing Items Detected';
+                message.innerText = 'The following items are missing:\n\n' + result.missing_items;
+            }
+
+            resultModal.classList.remove('hidden');
+            resultModal.classList.add('flex');
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadCubesats();
+
+            const cubesatSelect = document.getElementById('cubesatSelect');
+            const checkForm = document.getElementById('checkForm');
+
+            cubesatSelect.addEventListener('change', (e) => {
+                if (e.target.value) {
+                    checkForm.classList.remove('hidden');
+                    fillDefaults();
+                } else {
+                    checkForm.classList.add('hidden');
+                }
+            });
+
+            checkForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+
+                // Convert strings to numbers
+                for (const key in data) {
+                    data[key] = parseInt(data[key]);
+                }
+
+                // Add IDs
+                data.cubesat_id = parseInt(cubesatSelect.value);
+                data.instructor_id = parseInt(currentUser.instructor_id);
+
+                try {
+                    const result = await apiFetch('/session_logs/', {
+                        method: 'POST',
+                        body: JSON.stringify(data)
+                    });
+
+                    showResult(result);
+                } catch (error) {
+                    alert('Error submitting check: ' + error.message);
+                }
+            });
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col -translate-x-full lg:translate-x-0">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user-graduate text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Instructor</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="instructor_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i><span>Dashboard</span>
+            </a>
+            <a href="cubesat_check.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-clipboard-check w-5"></i><span>CubeSat Check</span>
+            </a>
+            <a href="notifications.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-bell w-5"></i><span>Notifications</span>
+            </a>
+        </nav>
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i><span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Post-Session Check</h1>
+                        <p class="text-sm text-gray-500 mt-1">Verify CubeSat inventory and report missing items</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span id="user-role"
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div class="flex-1 p-6 space-y-8 max-w-4xl mx-auto w-full">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Select CubeSat</label>
+                    <select id="cubesatSelect"
+                        class="w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                        <option value="">Loading CubeSats...</option>
+                    </select>
+                </div>
+
+                <form id="checkForm" class="space-y-6 hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Structure & Mechanics -->
+                        <div class="space-y-4">
+                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">
+                                Structure & Mechanics
+                            </h3>
+                            <div>
+                                <label class="block text-sm text-gray-600">Structures (Expected: 6)</label>
+                                <input type="number" name="structures" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Reaction Wheel (Expected: 1)</label>
+                                <input type="number" name="reaction_wheel" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Electronics (Sensors, Boards & Modules) -->
+                        <div class="space-y-4">
+                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">Electronics</h3>
+
+                            <div>
+                                <label class="block text-sm text-gray-600">Current Sensors (Expected: 2)</label>
+                                <input type="number" name="current_sensors" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Temp Sensors (Expected: 1)</label>
+                                <input type="number" name="temp_sensors" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">FRAM (Expected: 1)</label>
+                                <input type="number" name="fram" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">SD Card (Expected: 1)</label>
+                                <input type="number" name="sd_card" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">MPU (Expected: 1)</label>
+                                <input type="number" name="mpu" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">GPS (Expected: 1)</label>
+                                <input type="number" name="gps" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Motor Driver (Expected: 1)</label>
+                                <input type="number" name="motor_driver" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+
+                            <div class="pt-2 border-t border-gray-200">
+                                <label class="block text-sm text-gray-600">CDHS Board (Expected: 1)</label>
+                                <input type="number" name="cdhs_board" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">EPS Board (Expected: 1)</label>
+                                <input type="number" name="eps_board" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">ADCS Board (Expected: 1)</label>
+                                <input type="number" name="adcs_board" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+
+                            <div class="pt-2 border-t border-gray-200">
+                                <label class="block text-sm text-gray-600">ESP32-CAM (Expected: 1)</label>
+                                <input type="number" name="esp32_cam" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">ESP32 (Expected: 1)</label>
+                                <input type="number" name="esp32" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Magnetorquer (Expected: 1)</label>
+                                <input type="number" name="magnetorquer" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Buck Converter Module (Expected: 1)</label>
+                                <input type="number" name="buck_converter_module" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Li-Ion Battery (Expected: 1)</label>
+                                <input type="number" name="li_ion_battery" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Pin Sockets (Expected: 4)</label>
+                                <input type="number" name="pin_socket" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Tools -->
+                        <div class="space-y-4">
+                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">Tools</h3>
+                            <div>
+                                <label class="block text-sm text-gray-600">Phillips Screwdriver (Expected: 1)</label>
+                                <input type="number" name="phillips_screwdriver" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Screw Gauge 3D (Expected: 1)</label>
+                                <input type="number" name="screw_gauge_3d" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">Standoff Tool 3D (Expected: 1)</label>
+                                <input type="number" name="standoff_tool_3d" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Screws & Standoffs -->
+                        <div class="space-y-4">
+                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">
+                                Screws & Standoffs
+                            </h3>
+                            <div>
+                                <label class="block text-sm text-gray-600">M3 Screws (Expected: 20)</label>
+                                <input type="number" name="m3_screws" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">M3 Hex Nuts (Expected: 4)</label>
+                                <input type="number" name="m3_hex_nut" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">M3 9+6mm Brass Standoffs (Expected:
+                                    4)</label>
+                                <input type="number" name="m3_9_6mm_brass_standoff" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">M3 10mm Brass Standoffs (Expected: 4)</label>
+                                <input type="number" name="m3_10mm_brass_standoff" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">M3 10+6mm Brass Standoffs (Expected:
+                                    4)</label>
+                                <input type="number" name="m3_10_6mm_brass_standoff" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600">M3 20+6mm Brass Standoffs (Expected:
+                                    12)</label>
+                                <input type="number" name="m3_20_6mm_brass_standoff" required min="0"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end pt-6 border-t border-gray-200">
+                        <button type="submit"
+                            class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm">
+                            Submit Check
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="resultModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl max-w-md w-full mx-4 p-6 shadow-2xl">
+            <div class="text-center mb-6">
+                <div id="resultIcon" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full mb-4">
+                    <!-- Icon injected by JS -->
+                </div>
+                <h3 id="resultTitle" class="text-lg font-medium text-gray-900"></h3>
+                <p id="resultMessage" class="text-sm text-gray-500 mt-2 whitespace-pre-line"></p>
+            </div>
+            <div class="flex justify-center">
+                <button onclick="window.location.href='instructor_dashboard.html'"
+                    class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors">
+                    Back to Dashboard
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>

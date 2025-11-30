@@ -61,25 +61,44 @@
         }
     </style>
     <script defer>
-        // Available tools configuration
+        // Available tools configuration (NEW DATABASE FIELDS)
         const availableTools = {
-            structures: { name: "Structures (Frames, etc.)", unit: "units" },
-            current_sensors: { name: "Current Sensors", unit: "units" },
-            temp_sensors: { name: "Temperature Sensors", unit: "units" },
-            fram: { name: "FRAM", unit: "units" },
-            sd_card: { name: "SD Card", unit: "units" },
-            reaction_wheel: { name: "Reaction Wheel", unit: "units" },
-            mpu: { name: "MPU (Gyro/Accel)", unit: "units" },
-            gps: { name: "GPS Module", unit: "units" },
-            motor_driver: { name: "Motor Driver", unit: "units" },
-            phillips_screwdriver: { name: "Phillips Screwdriver", unit: "units" },
-            screw_gauge_3d: { name: "Screw Gauge (3D Printed)", unit: "units" },
-            standoff_tool_3d: { name: "Standoff Tool (3D Printed)", unit: "units" },
-            m3_10mm: { name: "M3 10mm Screws", unit: "units" },
-            m3_10mm_thread: { name: "M3 10mm Thread", unit: "units" },
-            m3_9mm_thread: { name: "M3 9mm Thread", unit: "units" },
-            m3_20mm_thread: { name: "M3 20mm Thread", unit: "units" },
-            m3_6mm: { name: "M3 6mm Screws", unit: "units" }
+            // Core electronics / sensors
+            structures: { name: "Structures (Frames, etc.)", unit: "pcs" },
+            current_sensors: { name: "Current Sensors", unit: "pcs" },
+            temp_sensors: { name: "Temperature Sensors", unit: "pcs" },
+            fram: { name: "FRAM", unit: "pcs" },
+            sd_card: { name: "SD Card", unit: "pcs" },
+            reaction_wheel: { name: "Reaction Wheel", unit: "pcs" },
+            mpu: { name: "MPU / IMU", unit: "pcs" },
+            gps: { name: "GPS Module", unit: "pcs" },
+            motor_driver: { name: "Motor Driver", unit: "pcs" },
+
+            // Tools
+            phillips_screwdriver: { name: "Phillips Screwdriver", unit: "pcs" },
+            screw_gauge_3d: { name: "Screw Gauge (3D Printed)", unit: "pcs" },
+            standoff_tool_3d: { name: "Standoff Tool (3D Printed)", unit: "pcs" },
+
+            // Boards
+            cdhs_board: { name: "CDHS Board", unit: "pcs" },
+            eps_board: { name: "EPS Board", unit: "pcs" },
+            adcs_board: { name: "ADCS Board", unit: "pcs" },
+
+            // ESP32 & modules
+            esp32_cam: { name: "ESP32-CAM", unit: "pcs" },
+            esp32: { name: "ESP32", unit: "pcs" },
+            magnetorquer: { name: "Magnetorquer", unit: "pcs" },
+            buck_converter_module: { name: "Buck Converter Module", unit: "pcs" },
+            li_ion_battery: { name: "Li-Ion Battery", unit: "pcs" },
+            pin_socket: { name: "Pin Socket", unit: "pcs" },
+
+            // Mechanical hardware
+            m3_screws: { name: "M3 Screws", unit: "pcs" },
+            m3_hex_nut: { name: "M3 Hex Nut", unit: "pcs" },
+            m3_9_6mm_brass_standoff: { name: "M3 9+6mm Brass Standoff", unit: "pcs" },
+            m3_10mm_brass_standoff: { name: "M3 10mm Brass Standoff", unit: "pcs" },
+            m3_10_6mm_brass_standoff: { name: "M3 10+6mm Brass Standoff", unit: "pcs" },
+            m3_20_6mm_brass_standoff: { name: "M3 20+6mm Brass Standoff", unit: "pcs" }
         };
 
         let selectedCubesat = null;
@@ -95,18 +114,24 @@
             }
             document.getElementById("user-role").textContent = role;
             document.getElementById("mobile-user-role").textContent = role;
+
+            // Hide admin-only links for non-admin
+            if (role !== "admin") {
+                const adminEls = document.querySelectorAll('[data-admin-only]');
+                adminEls.forEach(el => el.style.display = 'none');
+            }
         }
 
         async function loadCubesats() {
             const select = document.getElementById('cubesatSelect');
             try {
                 const data = await apiFetch('/cubesats/');
-                cubesatsData = data;
+                cubesatsData = data || [];
 
                 // Sort by ID
-                data.sort((a, b) => a.id - b.id);
+                cubesatsData.sort((a, b) => a.id - b.id);
 
-                data.forEach(cubesat => {
+                cubesatsData.forEach(cubesat => {
                     const option = document.createElement('option');
                     option.value = cubesat.id;
                     option.textContent = `#${cubesat.id} - ${cubesat.name} (${cubesat.location || 'No Location'})`;
@@ -131,14 +156,13 @@
                 previewSection.classList.add('hidden');
                 renderToolsForm();
 
-                // Auto-fill tools based on selected Cubesat
+                // Auto-fill tools based on selected Cubesat inventory
                 Object.keys(availableTools).forEach(key => {
                     const input = document.getElementById(`tool_${key}`);
-                    if (input && selectedCubesat[key] !== undefined) {
+                    if (input && selectedCubesat[key] !== undefined && selectedCubesat[key] !== null) {
                         input.value = selectedCubesat[key];
                     }
                 });
-
             } else {
                 toolsSection.classList.add('hidden');
                 previewSection.classList.add('hidden');
@@ -308,7 +332,6 @@
             try {
                 showNotification('Generating PDF...', 'info');
 
-                // Configure html2canvas
                 const canvas = await html2canvas(receiptElement, {
                     scale: 2,
                     useCORS: true,
@@ -349,7 +372,6 @@
             } catch (error) {
                 console.error('Error generating PDF:', error);
 
-                // Fallback
                 try {
                     showNotification('Trying alternative method...', 'info');
                     await downloadReceiptPDFFallback();
@@ -364,7 +386,6 @@
             const receiptElement = document.getElementById('receiptContent');
             const tempElement = receiptElement.cloneNode(true);
 
-            // Remove images for fallback
             const images = tempElement.querySelectorAll('img');
             images.forEach(img => img.remove());
 
@@ -422,7 +443,7 @@
             if (!selectedCubesat) return;
 
             const items = {};
-            Object.entries(availableTools).forEach(([key, tool]) => {
+            Object.entries(availableTools).forEach(([key]) => {
                 const quantity = parseInt(document.getElementById(`tool_${key}`).value) || 0;
                 if (quantity > 0) {
                     items[key] = quantity;
@@ -529,6 +550,16 @@
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                 <i class="fa-solid fa-cube w-5"></i>
                 <span>Cubesats</span>
+            </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
             </a>
             <a href="instructors_list.html"
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">

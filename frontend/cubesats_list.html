@@ -62,10 +62,85 @@
         let cubesatsData = [];
         let filteredData = [];
 
+        let currentUser = null;
+
+        // Frontend required counts – must match backend REQUIRED_COUNTS
+        const REQUIRED_COUNTS = {
+            // Existing items
+            structures: 6,
+            current_sensors: 2,
+            temp_sensors: 1,
+            fram: 1,
+            sd_card: 1,
+            reaction_wheel: 1,
+            mpu: 1,
+            gps: 1,
+            motor_driver: 1,
+            phillips_screwdriver: 1,
+            screw_gauge_3d: 1,
+            standoff_tool_3d: 1,
+
+            // New boards
+            cdhs_board: 1,
+            eps_board: 1,
+            adcs_board: 1,
+
+            // New electronics
+            esp32_cam: 1,
+            esp32: 1,
+            magnetorquer: 1,
+            buck_converter_module: 1,
+            li_ion_battery: 1,
+            pin_socket: 1,
+
+            // New mechanical parts
+            m3_screws: 20,
+            m3_hex_nut: 4,
+            m3_9_6mm_brass_standoff: 4,
+            m3_10mm_brass_standoff: 4,
+            m3_10_6mm_brass_standoff: 4,
+            m3_20_6mm_brass_standoff: 12,
+        };
+
+
         function ensureAuth() {
-            const token = getToken();
-            if (!token) window.location.href = "login.html";
+            const token = sessionStorage.getItem("token");
+            const role = sessionStorage.getItem("role");
+            const username = sessionStorage.getItem("username");
+
+            if (!token || !role) {
+                window.location.href = "login.html";
+                return;
+            }
+
+            currentUser = {
+                role: role,
+                username: username
+            };
+
+            if (currentUser.role !== "admin" && currentUser.role !== "operations") {
+                alert("Access denied. Admin/Operations only.");
+                window.location.href = "login.html";
+                return;
+            }
+
+            document.getElementById("user-role").textContent = currentUser.role;
+            document.getElementById("mobile-user-role").textContent = currentUser.role;
+
+            // Hide user management features for non-admin users
+            if (currentUser.role !== "admin") {
+                const userElements = document.querySelectorAll('[data-admin-only]');
+                userElements.forEach(el => el.style.display = 'none');
+            }
         }
+
+
+        // function ensureAuth() {
+        //     const token = getToken();
+        //     if (!token) window.location.href = "login.html";
+
+
+        // }
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -138,24 +213,19 @@
                 const tr = document.createElement("tr");
                 tr.className = "table-row-hover transition-all";
 
-                // Calculate missing items
+                // Calculate missing items based on REQUIRED_COUNTS
                 let missing = [];
-                const required = {
-                    structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
-                    reaction_wheel: 1, mpu: 1, gps: 1, motor_driver: 1, phillips_screwdriver: 1,
-                    screw_gauge_3d: 1, standoff_tool_3d: 1, m3_10mm: 10, m3_10mm_thread: 10,
-                    m3_9mm_thread: 10, m3_20mm_thread: 10, m3_6mm: 4
-                };
 
-                for (const [key, reqVal] of Object.entries(required)) {
+                for (const [key, reqVal] of Object.entries(REQUIRED_COUNTS)) {
                     if ((c[key] || 0) < reqVal) {
                         missing.push({
                             name: key.replace(/_/g, " "),
                             current: c[key] || 0,
-                            required: reqVal
+                            required: reqVal,
                         });
                     }
                 }
+
 
                 const missingText = missing.length > 0
                     ? `<button onclick="openMissingItemsModal(${c.id})" class="text-red-600 text-xs font-medium bg-red-50 px-2 py-1 rounded-full border border-red-100 hover:bg-red-100 transition-colors cursor-pointer flex items-center gap-1">
@@ -192,7 +262,7 @@
                             <a href="cubesat_edit.html?id=${c.id}" class="text-purple-600 hover:text-purple-900 p-1 rounded hover:bg-purple-50 transition-colors" title="Edit">
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </a>
-                            <button onclick="deleteCubesat(${c.id})" class="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors" title="Delete">
+                            <button onclick="openDeleteModal(${c.id})" class="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors" title="Delete">
                                 <i class="fa-solid fa-trash-can"></i>
                             </button>
                         </div>
@@ -213,24 +283,19 @@
 
             modalTitle.textContent = `Missing Items: ${cubesat.name}`;
 
-            // Calculate missing items again for the modal
+            // Calculate missing items again for the modal using REQUIRED_COUNTS
             let missing = [];
-            const required = {
-                structures: 6, current_sensors: 2, temp_sensors: 1, fram: 1, sd_card: 1,
-                reaction_wheel: 1, mpu: 1, gps: 1, motor_driver: 1, phillips_screwdriver: 1,
-                screw_gauge_3d: 1, standoff_tool_3d: 1, m3_10mm: 10, m3_10mm_thread: 10,
-                m3_9mm_thread: 10, m3_20mm_thread: 10, m3_6mm: 4
-            };
 
-            for (const [key, reqVal] of Object.entries(required)) {
+            for (const [key, reqVal] of Object.entries(REQUIRED_COUNTS)) {
                 if ((cubesat[key] || 0) < reqVal) {
                     missing.push({
                         name: key.replace(/_/g, " "),
                         current: cubesat[key] || 0,
-                        required: reqVal
+                        required: reqVal,
                     });
                 }
             }
+
 
             if (missing.length === 0) {
                 modalBody.innerHTML = '<p class="text-green-600 font-medium text-center">No missing items!</p>';
@@ -291,18 +356,67 @@
             renderCubesats();
         }
 
-        async function deleteCubesat(id) {
-            if (!confirm("Are you sure you want to delete this cubesat?")) return;
+
+
+        let cubesatToDeleteId = null;
+
+        function openDeleteModal(id) {
+            const cubesat = cubesatsData.find(c => c.id === id);
+            cubesatToDeleteId = id;
+
+            const nameSpan = document.getElementById('deleteCubesatName');
+            if (nameSpan) {
+                nameSpan.textContent = cubesat ? cubesat.name : `#${id}`;
+            }
+
+            const modal = document.getElementById('deleteConfirmModal');
+            const modalContent = document.getElementById('deleteModalContent');
+
+            if (!modal || !modalContent) return;
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+                modalContent.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeDeleteModal() {
+            const modal = document.getElementById('deleteConfirmModal');
+            const modalContent = document.getElementById('deleteModalContent');
+
+            if (!modal || !modalContent) return;
+
+            modal.classList.add('opacity-0');
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-95');
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                cubesatToDeleteId = null;
+            }, 300);
+        }
+
+        async function confirmDeleteCubesat() {
+            if (!cubesatToDeleteId) return;
+
             try {
-                await apiFetch(`/cubesats/${id}`, { method: "DELETE" });
+                await apiFetch(`/cubesats/${cubesatToDeleteId}`, { method: "DELETE" });
                 showNotification('Cubesat deleted successfully', 'success');
-                cubesatsData = cubesatsData.filter(c => c.id !== id);
+
+                // Update local data and re-render
+                cubesatsData = cubesatsData.filter(c => c.id !== cubesatToDeleteId);
                 filterCubesats();
+
+                closeDeleteModal();
             } catch (err) {
                 console.error(err);
                 showNotification('Error deleting cubesat', 'error');
+                closeDeleteModal();
             }
         }
+
 
         async function exportToExcel() {
             try {
@@ -397,6 +511,16 @@
                     }
                 });
             }
+
+            // Close Delete modal when clicking outside
+            const deleteModal = document.getElementById('deleteConfirmModal');
+            if (deleteModal) {
+                deleteModal.addEventListener('click', function (e) {
+                    if (e.target === this) {
+                        closeDeleteModal();
+                    }
+                });
+            }
         });
     </script>
 </head>
@@ -445,6 +569,16 @@
                 class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
                 <i class="fa-solid fa-cube w-5"></i>
                 <span>Cubesats</span>
+            </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
             </a>
             <a href="instructors_list.html"
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
@@ -611,19 +745,22 @@
     <!-- Missing Items Modal -->
     <div id="missingItemsModal"
         class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-300"
-            id="modalContent">
+        <div id="modalContent" class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-300
+                  max-h-[80vh] flex flex-col">
             <div class="p-6 border-b border-gray-200 flex justify-between items-center">
                 <h3 class="text-lg font-bold text-gray-900" id="modalTitle">Missing Items</h3>
                 <button onclick="closeMissingItemsModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
-            <div class="p-6">
+
+            <!-- Scrollable body -->
+            <div class="p-6 flex-1 overflow-y-auto custom-scrollbar">
                 <div id="modalBody" class="space-y-3">
                     <!-- Missing items will be injected here -->
                 </div>
             </div>
+
             <div class="p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg flex justify-end">
                 <button onclick="closeMissingItemsModal()"
                     class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors font-medium">
@@ -632,6 +769,43 @@
             </div>
         </div>
     </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteConfirmModal"
+        class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div id="deleteModalContent"
+            class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-300">
+            <div class="p-6 border-b border-gray-200 flex items-start gap-3">
+                <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                    <i class="fa-solid fa-triangle-exclamation text-red-600"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-lg font-bold text-gray-900">Delete CubeSat</h3>
+                    <p class="mt-1 text-sm text-gray-600">
+                        Are you sure you want to delete <span class="font-semibold text-gray-900"
+                            id="deleteCubesatName"></span>?
+                        This action cannot be undone.
+                    </p>
+                </div>
+                <button onclick="closeDeleteModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 bg-gray-50 border-t border-gray-200 flex justify-end gap-3 rounded-b-lg">
+                <button onclick="closeDeleteModal()"
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    Cancel
+                </button>
+                <button onclick="confirmDeleteCubesat()"
+                    class="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition-colors flex items-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i>
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+
 
     <!-- Overlay for mobile sidebar -->
     <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">

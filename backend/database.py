@@ -53,7 +53,7 @@ def init_db():
         """
     )
 
-    # Table users - UPDATED to include instructor_id
+    # Table users
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -68,7 +68,7 @@ def init_db():
         """
     )
 
-    # Table cubesats
+    # Table cubesats  (OLD m3_* removed here)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS cubesats (
@@ -90,11 +90,6 @@ def init_db():
             phillipsscrewdriver INTEGER DEFAULT 0,
             screwgauge3d INTEGER DEFAULT 0,
             standofftool3d INTEGER DEFAULT 0,
-            m3_10mm INTEGER DEFAULT 0,
-            m3_10mm_thread INTEGER DEFAULT 0,
-            m3_9mm_thread INTEGER DEFAULT 0,
-            m3_20mm_thread INTEGER DEFAULT 0,
-            m3_6mm INTEGER DEFAULT 0,
             iscomplete BOOLEAN DEFAULT FALSE,
             missingitems TEXT,
             is_received BOOLEAN DEFAULT FALSE,
@@ -158,63 +153,167 @@ def init_db():
         """
     )
 
-    
+    # Table cubesat_session_logs
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cubesat_session_logs (
+            id SERIAL PRIMARY KEY,
+            cubesat_id INTEGER REFERENCES cubesats(id),
+            instructor_id INTEGER REFERENCES instructors(id),
+            missing_items TEXT,
+            status TEXT DEFAULT 'pending_refill',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+        # Table components (extra sensors/boards/tools outside CubeSats)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS components (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL CHECK (category IN ('sensor', 'board', 'tool', 'other')),
+            image_url TEXT,
+            total_quantity INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    # Table component_logs (history of stock changes)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS component_logs (
+            id SERIAL PRIMARY KEY,
+            component_id INTEGER NOT NULL REFERENCES components(id) ON DELETE CASCADE,
+            change INTEGER NOT NULL,      -- +5, -3, etc.
+            reason TEXT,
+            user_id INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+
+    # Ensure extra columns on users/instructors/cubesats
 
     # Check if instructor_id column exists in users, if not add it
-    cur.execute("""
+    cur.execute(
+        """
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name='users' and column_name='instructor_id';
-    """)
-    
+        """
+    )
     if not cur.fetchone():
-        # Add the instructor_id column
         cur.execute("ALTER TABLE users ADD COLUMN instructor_id INTEGER REFERENCES instructors(id);")
         print("Added instructor_id column to users table")
 
     # Check if user_id column exists in instructors, if not add it
-    cur.execute("""
+    cur.execute(
+        """
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name='instructors' and column_name='user_id';
-    """)
-    
+        """
+    )
     if not cur.fetchone():
-        # Add the user_id column
         cur.execute("ALTER TABLE instructors ADD COLUMN user_id INTEGER REFERENCES users(id);")
         print("Added user_id column to instructors table")
 
     # Check if is_received column exists in cubesats, if not add it
-    cur.execute("""
+    cur.execute(
+        """
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name='cubesats' and column_name='is_received';
-    """)
-    
+        """
+    )
     if not cur.fetchone():
-        # Add the is_received column
         cur.execute("ALTER TABLE cubesats ADD COLUMN is_received BOOLEAN DEFAULT FALSE;")
         print("Added is_received column to cubesats table")
 
     # Check if received_date column exists in cubesats, if not add it
-    cur.execute("""
+    cur.execute(
+        """
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name='cubesats' and column_name='received_date';
-    """)
-    
+        """
+    )
     if not cur.fetchone():
-        # Add the received_date column
         cur.execute("ALTER TABLE cubesats ADD COLUMN received_date DATE;")
         print("Added received_date column to cubesats table")
 
-    # Insert default users if they don't exist - UPDATED with instructor_id
-    cur.execute("""
+    # Insert default users if they don't exist
+    cur.execute(
+        """
         INSERT INTO users (username, password, full_name, role, instructor_id) 
-        VALUES 
-            ('admin', 'admin123', 'Admin User', 'admin', NULL)
+        VALUES ('admin', 'admin123', 'Admin User', 'admin', NULL)
         ON CONFLICT (username) DO NOTHING;
-    """)
+        """
+    )
+
+    # ---------- HELPERS (FIXED INDENTATION) ----------
+
+    def drop_column_if_exists(table: str, column: str):
+        cur.execute(
+            """
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name=%s AND column_name=%s;
+            """,
+            (table, column),
+        )
+        if cur.fetchone():
+            cur.execute(f"ALTER TABLE {table} DROP COLUMN {column};")
+            print(f"Dropped column {column} from {table} table")
+
+    def add_column_if_not_exists(table: str, column: str, col_type: str):
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name=%s AND column_name=%s;
+            """,
+            (table, column),
+        )
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type};")
+            print(f"Added {column} column to {table} table")
+
+    # ---------- DROP OLD M3 COLUMNS ----------
+
+    drop_column_if_exists("cubesats", "m3_10mm")
+    drop_column_if_exists("cubesats", "m3_10mm_thread")
+    drop_column_if_exists("cubesats", "m3_9mm_thread")
+    drop_column_if_exists("cubesats", "m3_20mm_thread")
+    drop_column_if_exists("cubesats", "m3_6mm")
+
+    # ---------- ADD NEW CUBESAT COMPONENT COLUMNS ----------
+
+    # Boards
+    add_column_if_not_exists("cubesats", "cdhs_board", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "eps_board", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "adcs_board", "INTEGER DEFAULT 0")
+
+    # Electronics
+    add_column_if_not_exists("cubesats", "esp32_cam", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "esp32", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "magnetorquer", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "buck_converter_module", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "li_ion_battery", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "pin_socket", "INTEGER DEFAULT 0")
+
+    # Mechanical
+    add_column_if_not_exists("cubesats", "m3_screws", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "m3_hex_nut", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "m3_9_6mm_brass_standoff", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "m3_10mm_brass_standoff", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "m3_10_6mm_brass_standoff", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("cubesats", "m3_20_6mm_brass_standoff", "INTEGER DEFAULT 0")
 
     conn.commit()
     cur.close()

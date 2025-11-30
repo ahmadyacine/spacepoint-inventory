@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Logs - SpacePoint Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* body {
+            font-family: 'Inter', sans-serif;
+        } */
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        .sidebar {
+            transition: transform 0.3s ease-in-out;
+        }
+    </style>
+    <script src="js/api.js"></script>
+    <script>
+        let currentUser = null;
+
+        function ensureAuth() {
+            const token = sessionStorage.getItem("token");
+            const role = sessionStorage.getItem("role");
+            const username = sessionStorage.getItem("username");
+
+            if (!token || !role) {
+                window.location.href = "login.html";
+                return;
+            }
+
+            currentUser = {
+                role: role,
+                username: username
+            };
+
+            if (currentUser.role !== "admin" && currentUser.role !== "operations") {
+                alert("Access denied. Admin/Operations only.");
+                window.location.href = "login.html";
+                return;
+            }
+
+            document.getElementById("user-role").textContent = currentUser.role;
+            document.getElementById("mobile-user-role").textContent = currentUser.role;
+
+            // Hide user management features for non-admin users
+            if (currentUser.role !== "admin") {
+                const userElements = document.querySelectorAll('[data-admin-only]');
+                userElements.forEach(el => el.style.display = 'none');
+            }
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return "N/A";
+            const date = new Date(dateStr);
+            return date.toLocaleString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: 'numeric', minute: '2-digit', hour12: true
+            });
+        }
+
+        async function loadLogs() {
+            const tbody = document.getElementById("logs-tbody");
+            const emptyEl = document.getElementById("logs-empty");
+            tbody.innerHTML = "";
+            emptyEl.textContent = "Loading...";
+
+            try {
+                const logs = await apiFetch("/session_logs/");
+
+                if (!logs.length) {
+                    emptyEl.textContent = "No session logs found.";
+                    return;
+                }
+                emptyEl.textContent = "";
+
+                logs.forEach(log => {
+                    const tr = document.createElement("tr");
+                    tr.className = "border-b border-gray-100 transition-all hover:bg-gray-50";
+
+                    const date = formatDateTime(log.created_at);
+                    const statusBadge = log.status === 'complete'
+                        ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"><i class="fa-solid fa-check mr-1"></i>Complete</span>`
+                        : `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Missing Items</span>`;
+
+                    const missingItems = log.missing_items
+                        ? `<div class="text-sm text-red-600 whitespace-pre-line">${log.missing_items}</div>`
+                        : `<span class="text-gray-400 italic">None</span>`;
+
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${date}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${log.cubesat_name}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${log.instructor_name}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+                        <td class="px-6 py-4 text-sm">${missingItems}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                console.error('Error loading logs:', error);
+                emptyEl.textContent = "Error loading session logs.";
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadLogs();
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white"><i
+                class="fa-solid fa-bars"></i></button>
+    </div>
+    <!-- Sidebar Navigation -->
+    <div id="sidebar" class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo and Brand -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+    
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Main Navigation -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+    
+        <!-- Logout Section -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">Session Logs</h1>
+                        <p class="text-sm text-gray-500 mt-1">Review post-session CubeSat checks and missing items</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-sm text-gray-500">Role:</span>
+                        <span id="user-role"
+                            class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <!-- Content Area -->
+        <div class="flex-1 p-6 space-y-8 max-w-7xl mx-auto w-full">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div
+                    class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white flex justify-between items-center">
+                    <h3 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-list-check"></i>
+                        Session Logs
+                    </h3>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Date</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    CubeSat</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Instructor</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Status</th>
+                                <th
+                                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    Missing Items</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-tbody" class="bg-white divide-y divide-gray-200">
+                            <!-- Logs will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="logs-empty" class="flex items-center justify-center h-32 text-gray-500"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Components Inventory – SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <style>
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+    </style>
+
+    <script defer>
+        let currentUser = null;
+        let componentsData = [];
+        let filteredComponents = [];
+        let selectedComponentId = null;
+
+        function ensureAuth() {
+            const token = sessionStorage.getItem("token");
+            const role = sessionStorage.getItem("role");
+            const username = sessionStorage.getItem("username");
+
+            if (!token || !role) {
+                window.location.href = "login.html";
+                return;
+            }
+
+            currentUser = { role, username };
+
+            if (role !== "admin" && role !== "operations") {
+                alert("Access denied. Admin/Operations only.");
+                window.location.href = "login.html";
+                return;
+            }
+
+            document.getElementById("user-role").textContent = role;
+            document.getElementById("mobile-user-role").textContent = role;
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+
+        function showToast(message, type = "info") {
+            const notification = document.createElement('div');
+            const bg = type === 'success' ? 'bg-green-500'
+                : type === 'error' ? 'bg-red-500'
+                    : 'bg-blue-500';
+
+            notification.className =
+                `${bg} fixed top-4 right-4 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300`;
+            notification.innerHTML = `
+                <div class="flex items-center gap-2 text-sm">
+                    <i class="fa-solid ${type === 'success'
+                    ? 'fa-check-circle'
+                    : type === 'error'
+                        ? 'fa-exclamation-circle'
+                        : 'fa-info-circle'}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            document.body.appendChild(notification);
+
+            setTimeout(() => notification.classList.remove('translate-x-full'), 50);
+
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        async function loadComponents() {
+            const container = document.getElementById("components-grid");
+            const emptyEl = document.getElementById("empty");
+            container.innerHTML = "";
+            emptyEl.textContent = "Loading...";
+
+            try {
+                const data = await apiFetch("/components/");
+                componentsData = data;
+                filteredComponents = [...componentsData];
+                if (!data.length) {
+                    emptyEl.textContent = "No components found. Add your first sensor or board.";
+                } else {
+                    emptyEl.textContent = "";
+                }
+                renderComponents();
+            } catch (err) {
+                console.error(err);
+                emptyEl.textContent = "Error loading components.";
+            }
+        }
+
+        function renderComponents() {
+            const container = document.getElementById("components-grid");
+            const emptyEl = document.getElementById("empty");
+
+            container.innerHTML = "";
+
+            if (!filteredComponents.length) {
+                emptyEl.textContent = "No components match your filters.";
+                return;
+            } else {
+                emptyEl.textContent = "";
+            }
+
+            filteredComponents.forEach((c) => {
+                const card = document.createElement("div");
+                card.className = "bg-white border border-gray-200 rounded-xl shadow-sm p-4 flex flex-col gap-3";
+
+                const imgUrl = c.image_url || "https://via.placeholder.com/150?text=Component";
+
+                card.innerHTML = `
+                    <div class="aspect-video bg-gray-50 rounded-lg overflow-hidden flex items-center justify-center">
+                        <img src="${imgUrl}" alt="${c.name}"
+                             class="w-full h-full object-contain p-2" onerror="this.src='https://via.placeholder.com/150?text=Component';">
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-sm font-semibold text-gray-900 truncate">${c.name}</h3>
+                        <p class="text-xs text-purple-700 inline-flex items-center gap-1 mt-1">
+                            <i class="fa-solid fa-tag text-[10px]"></i>
+                            <span class="capitalize">${c.category}</span>
+                        </p>
+                    </div>
+                    <div class="flex items-center justify-between mt-2">
+                        <div>
+                            <p class="text-xs text-gray-500">Total Quantity</p>
+                            <p class="text-xl font-bold text-gray-900">${c.total_quantity}</p>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <button
+                                class="inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+                                onclick="openAdjustModal(${c.id})">
+                                <i class="fa-solid fa-plus-minus mr-1"></i>
+                                Adjust
+                            </button>
+                            <button
+                                class="inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                                onclick="openEditModal(${c.id})">
+                                <i class="fa-solid fa-pen mr-1"></i>
+                                Edit
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function filterComponents() {
+            const search = document.getElementById('searchName').value.toLowerCase();
+            const category = document.getElementById('filterCategory').value;
+
+            filteredComponents = componentsData.filter(c => {
+                const matchName = c.name.toLowerCase().includes(search);
+                const matchCategory = category === 'all' || c.category === category;
+                return matchName && matchCategory;
+            });
+
+            renderComponents();
+        }
+
+        // ---- Add Component Modal ----
+        function openAddModal() {
+            document.getElementById('addName').value = "";
+            document.getElementById('addImageUrl').value = "";
+            document.getElementById('addCategory').value = "sensor";
+            document.getElementById('addInitialQuantity').value = 0;
+
+            const modal = document.getElementById('addComponentModal');
+            const content = document.getElementById('addModalContent');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeAddModal() {
+            const modal = document.getElementById('addComponentModal');
+            const content = document.getElementById('addModalContent');
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        async function submitAddComponent(e) {
+            e.preventDefault();
+            const name = document.getElementById('addName').value.trim();
+            const category = document.getElementById('addCategory').value;
+            const initial_quantity = parseInt(document.getElementById('addInitialQuantity').value || "0");
+            const image_url = document.getElementById('addImageUrl').value.trim() || null;
+
+            try {
+                const body = { name, category, initial_quantity, image_url };
+                const created = await apiFetch("/components/", {
+                    method: "POST",
+                    body: JSON.stringify(body),
+                });
+                componentsData.push(created);
+                filterComponents();
+                closeAddModal();
+                showToast("Component added successfully", "success");
+            } catch (err) {
+                console.error(err);
+                showToast("Error adding component", "error");
+            }
+        }
+
+        // ---- Adjust Quantity Modal ----
+        function openAdjustModal(id) {
+            selectedComponentId = id;
+            const component = componentsData.find(c => c.id === id);
+            if (!component) return;
+
+            document.getElementById("adjustComponentName").textContent = component.name;
+            document.getElementById("adjustCurrentQuantity").textContent = component.total_quantity;
+            document.getElementById("adjustDelta").value = "";
+            document.getElementById("adjustReason").value = "";
+            document.getElementById("adjustMode").value = "add";
+
+            const modal = document.getElementById('adjustQuantityModal');
+            const content = document.getElementById('adjustModalContent');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeAdjustModal() {
+            const modal = document.getElementById('adjustQuantityModal');
+            const content = document.getElementById('adjustModalContent');
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        async function submitAdjustQuantity(e) {
+            e.preventDefault();
+            if (!selectedComponentId) return;
+
+            const mode = document.getElementById("adjustMode").value; // add / remove
+            const quantity = parseInt(document.getElementById("adjustDelta").value || "0");
+            const reason = document.getElementById("adjustReason").value.trim() || null;
+
+            if (!quantity || quantity <= 0) {
+                showToast("Quantity must be greater than zero", "error");
+                return;
+            }
+
+            let delta = mode === "add" ? quantity : -quantity;
+
+            try {
+                const updated = await apiFetch(`/components/${selectedComponentId}/adjust_quantity`, {
+                    method: "POST",
+                    body: JSON.stringify({ delta, reason }),
+                });
+
+                // update local array
+                componentsData = componentsData.map(c => c.id === updated.id ? updated : c);
+                filterComponents();
+                closeAdjustModal();
+                showToast("Quantity updated", "success");
+            } catch (err) {
+                console.error(err);
+                showToast("Error adjusting quantity: " + (err.message || ""), "error");
+            }
+        }
+
+        // ---- Edit Component Modal ----
+        function openEditModal(id) {
+            selectedComponentId = id;
+            const c = componentsData.find(c => c.id === id);
+            if (!c) return;
+
+            document.getElementById("editName").value = c.name;
+            document.getElementById("editImageUrl").value = c.image_url || "";
+            document.getElementById("editCategory").value = c.category;
+
+            const modal = document.getElementById('editComponentModal');
+            const content = document.getElementById('editModalContent');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editComponentModal');
+            const content = document.getElementById('editModalContent');
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        async function submitEditComponent(e) {
+            e.preventDefault();
+            if (!selectedComponentId) return;
+
+            const name = document.getElementById("editName").value.trim();
+            const category = document.getElementById("editCategory").value;
+            const image_url = document.getElementById("editImageUrl").value.trim() || null;
+
+            try {
+                const updated = await apiFetch(`/components/${selectedComponentId}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ name, category, image_url }),
+                });
+
+                componentsData = componentsData.map(c => c.id === updated.id ? updated : c);
+                filterComponents();
+                closeEditModal();
+                showToast("Component updated", "success");
+            } catch (err) {
+                console.error(err);
+                showToast("Error updating component", "error");
+            }
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadComponents();
+
+            // Close modals on outside click
+            ['addComponentModal', 'adjustQuantityModal', 'editComponentModal'].forEach(id => {
+                const modal = document.getElementById(id);
+                if (modal) {
+                    modal.addEventListener('click', (e) => {
+                        if (e.target === modal) {
+                            if (id === 'addComponentModal') closeAddModal();
+                            if (id === 'adjustQuantityModal') closeAdjustModal();
+                            if (id === 'editComponentModal') closeEditModal();
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role:
+                        <span class="font-semibold text-purple-600 capitalize" id="mobile-user-role">admin</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nav -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Components Inventory</h1>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Track extra sensors, boards, and tools outside CubeSat kits.
+                    </p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-sm text-gray-500">Role:</span>
+                    <span id="user-role"
+                        class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize">
+                        admin
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Filters & Actions -->
+        <div
+            class="p-6 border-b border-gray-200 bg-gray-50 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div>
+                    <label for="searchName" class="block text-sm font-medium text-gray-700 mb-1">
+                        Search Components
+                    </label>
+                    <div class="relative rounded-md shadow-sm">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fa-solid fa-search text-gray-400"></i>
+                        </div>
+                        <input id="searchName" type="text" oninput="filterComponents()"
+                            class="focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2"
+                            placeholder="Search by name...">
+                    </div>
+                </div>
+                <div>
+                    <label for="filterCategory" class="block text-sm font-medium text-gray-700 mb-1">
+                        Filter by Category
+                    </label>
+                    <select id="filterCategory" onchange="filterComponents()"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm rounded-md">
+                        <option value="all">All Categories</option>
+                        <option value="sensor">Sensors</option>
+                        <option value="board">Boards</option>
+                        <option value="tool">Tools</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end">
+                <button onclick="openAddModal()"
+                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                    <i class="fa-solid fa-plus mr-2"></i>
+                    Add Component
+                </button>
+            </div>
+        </div>
+
+        <!-- Components Grid -->
+        <div class="flex-1 p-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" id="components-grid">
+                <!-- Cards injected here -->
+            </div>
+            <div id="empty" class="flex items-center justify-center h-32 text-gray-500"></div>
+        </div>
+    </div>
+
+    <!-- Add Component Modal -->
+    <div id="addComponentModal"
+        class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div id="addModalContent"
+            class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-300">
+            <form onsubmit="submitAddComponent(event)">
+                <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                    <h3 class="text-lg font-bold text-gray-900">Add Component</h3>
+                    <button type="button" onclick="closeAddModal()"
+                        class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input id="addName" type="text" required
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                        <select id="addCategory"
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                            <option value="sensor">Sensor</option>
+                            <option value="board">Board</option>
+                            <option value="tool">Tool</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Initial Quantity</label>
+                            <input id="addInitialQuantity" type="number" min="0" value="0"
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Image URL (optional)</label>
+                            <input id="addImageUrl" type="url"
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                    <button type="button" onclick="closeAddModal()"
+                        class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                        class="px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700">
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Adjust Quantity Modal -->
+    <div id="adjustQuantityModal"
+        class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div id="adjustModalContent"
+            class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-300">
+            <form onsubmit="submitAdjustQuantity(event)">
+                <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900">Adjust Quantity</h3>
+                        <p class="text-sm text-gray-500">
+                            Component: <span id="adjustComponentName" class="font-medium text-gray-900"></span>
+                        </p>
+                    </div>
+                    <button type="button" onclick="closeAdjustModal()"
+                        class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <p class="text-sm text-gray-500">Current Quantity</p>
+                        <p id="adjustCurrentQuantity" class="text-xl font-bold text-gray-900"></p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Mode</label>
+                            <select id="adjustMode"
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                                <option value="add">Add</option>
+                                <option value="remove">Remove</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                            <input id="adjustDelta" type="number" min="1" required
+                                class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Reason (optional)</label>
+                        <textarea id="adjustReason" rows="2"
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm"></textarea>
+                    </div>
+                </div>
+                <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                    <button type="button" onclick="closeAdjustModal()"
+                        class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                        class="px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700">
+                        Update Stock
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Component Modal -->
+    <div id="editComponentModal"
+        class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
+        <div id="editModalContent"
+            class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 transform scale-95 transition-transform duration-300">
+            <form onsubmit="submitEditComponent(event)">
+                <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                    <h3 class="text-lg font-bold text-gray-900">Edit Component</h3>
+                    <button type="button" onclick="closeEditModal()"
+                        class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input id="editName" type="text" required
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                        <select id="editCategory"
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                            <option value="sensor">Sensor</option>
+                            <option value="board">Board</option>
+                            <option value="tool">Tool</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Image URL (optional)</label>
+                        <input id="editImageUrl" type="url"
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                    </div>
+                </div>
+                <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                    <button type="button" onclick="closeEditModal()"
+                        class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                        class="px-4 py-2 bg-purple-600 text-white rounded-md text-sm font-medium hover:bg-purple-700">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>
