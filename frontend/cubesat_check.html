@@ -80,7 +80,6 @@
             const cubesatSelect = document.getElementById('cubesatSelect');
             try {
                 const cubesats = await apiFetch('/cubesats/');
-                // Filter for current instructor's cubesats
                 const myCubesats = cubesats.filter(c => c.instructor_id === currentUser.instructor_id);
 
                 cubesatSelect.innerHTML = '<option value="">Select a CubeSat...</option>' +
@@ -91,7 +90,7 @@
             }
         }
 
-        // Default expected counts for each item (adjust numbers as needed)
+        // Default expected counts for each item
         const DEFAULT_COUNTS = {
             // Structure & mechanics
             structures: 6,
@@ -142,6 +141,11 @@
             }
         }
 
+        function clearAll() {
+            const inputs = document.querySelectorAll('#checkForm input[type="number"]');
+            inputs.forEach(i => i.value = "");
+        }
+
         function showResult(result) {
             const iconDiv = document.getElementById('resultIcon');
             const title = document.getElementById('resultTitle');
@@ -156,8 +160,8 @@
             } else {
                 iconDiv.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4';
                 iconDiv.innerHTML = `<svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`;
-                title.innerText = 'Missing Items Detected';
                 message.innerText = 'The following items are missing:\n\n' + result.missing_items;
+                title.innerText = 'Missing Items Detected';
             }
 
             resultModal.classList.remove('hidden');
@@ -185,12 +189,10 @@
                 const formData = new FormData(e.target);
                 const data = Object.fromEntries(formData.entries());
 
-                // Convert strings to numbers
                 for (const key in data) {
                     data[key] = parseInt(data[key]);
                 }
 
-                // Add IDs
                 data.cubesat_id = parseInt(cubesatSelect.value);
                 data.instructor_id = parseInt(currentUser.instructor_id);
 
@@ -272,7 +274,9 @@
                 <div class="flex items-center justify-between">
                     <div>
                         <h1 class="text-2xl font-bold text-gray-900">Post-Session Check</h1>
-                        <p class="text-sm text-gray-500 mt-1">Verify CubeSat inventory and report missing items</p>
+                        <p class="text-sm text-gray-500 mt-1">
+                            Quickly verify your CubeSat inventory and report missing items after each session.
+                        </p>
                     </div>
                     <div class="flex items-center gap-4">
                         <span class="text-sm text-gray-500">Role:</span>
@@ -284,187 +288,457 @@
         </header>
 
         <!-- Content Area -->
-        <div class="flex-1 p-6 space-y-8 max-w-4xl mx-auto w-full">
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div class="mb-6">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Select CubeSat</label>
-                    <select id="cubesatSelect"
-                        class="w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
-                        <option value="">Loading CubeSats...</option>
-                    </select>
+        <div class="flex-1 p-6 space-y-8 max-w-5xl mx-auto w-full">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+                <!-- CubeSat selector -->
+                <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Select CubeSat</label>
+                        <select id="cubesatSelect"
+                            class="w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
+                            <option value="">Loading CubeSats...</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">
+                            Choose the CubeSat you used in this session to start the checklist.
+                        </p>
+                    </div>
+                    <div class="hidden md:flex flex-col items-end text-xs text-gray-500">
+                        <span class="inline-flex items-center gap-2 mb-1">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Matches expected count
+                        </span>
+                        <span class="inline-flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-amber-500"></span> Different from expected
+                        </span>
+                    </div>
                 </div>
 
+                <!-- Form -->
                 <form id="checkForm" class="space-y-6 hidden">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- Structure & Mechanics -->
-                        <div class="space-y-4">
-                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">
-                                Structure & Mechanics
-                            </h3>
-                            <div>
-                                <label class="block text-sm text-gray-600">Structures (Expected: 6)</label>
-                                <input type="number" name="structures" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                    <!-- Top controls -->
+                    <div
+                        class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between rounded-lg bg-purple-50 px-4 py-3 border border-purple-100">
+                        <div class="flex items-center gap-3">
+                            <div
+                                class="w-9 h-9 rounded-full bg-white flex items-center justify-center shadow-sm border border-purple-100">
+                                <i class="fa-solid fa-list-check text-purple-600"></i>
                             </div>
                             <div>
-                                <label class="block text-sm text-gray-600">Reaction Wheel (Expected: 1)</label>
-                                <input type="number" name="reaction_wheel" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                <p class="text-sm font-semibold text-purple-900">Session Checklist</p>
+                                <p class="text-xs text-purple-700">
+                                    You can auto-fill all items with expected counts, then just adjust anything missing.
+                                </p>
                             </div>
                         </div>
-
-                        <!-- Electronics (Sensors, Boards & Modules) -->
-                        <div class="space-y-4">
-                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">Electronics</h3>
-
-                            <div>
-                                <label class="block text-sm text-gray-600">Current Sensors (Expected: 2)</label>
-                                <input type="number" name="current_sensors" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Temp Sensors (Expected: 1)</label>
-                                <input type="number" name="temp_sensors" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">FRAM (Expected: 1)</label>
-                                <input type="number" name="fram" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">SD Card (Expected: 1)</label>
-                                <input type="number" name="sd_card" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">MPU (Expected: 1)</label>
-                                <input type="number" name="mpu" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">GPS (Expected: 1)</label>
-                                <input type="number" name="gps" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Motor Driver (Expected: 1)</label>
-                                <input type="number" name="motor_driver" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-
-                            <div class="pt-2 border-t border-gray-200">
-                                <label class="block text-sm text-gray-600">CDHS Board (Expected: 1)</label>
-                                <input type="number" name="cdhs_board" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">EPS Board (Expected: 1)</label>
-                                <input type="number" name="eps_board" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">ADCS Board (Expected: 1)</label>
-                                <input type="number" name="adcs_board" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-
-                            <div class="pt-2 border-t border-gray-200">
-                                <label class="block text-sm text-gray-600">ESP32-CAM (Expected: 1)</label>
-                                <input type="number" name="esp32_cam" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">ESP32 (Expected: 1)</label>
-                                <input type="number" name="esp32" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Magnetorquer (Expected: 1)</label>
-                                <input type="number" name="magnetorquer" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Buck Converter Module (Expected: 1)</label>
-                                <input type="number" name="buck_converter_module" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Li-Ion Battery (Expected: 1)</label>
-                                <input type="number" name="li_ion_battery" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Pin Sockets (Expected: 4)</label>
-                                <input type="number" name="pin_socket" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                        </div>
-
-                        <!-- Tools -->
-                        <div class="space-y-4">
-                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">Tools</h3>
-                            <div>
-                                <label class="block text-sm text-gray-600">Phillips Screwdriver (Expected: 1)</label>
-                                <input type="number" name="phillips_screwdriver" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Screw Gauge 3D (Expected: 1)</label>
-                                <input type="number" name="screw_gauge_3d" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">Standoff Tool 3D (Expected: 1)</label>
-                                <input type="number" name="standoff_tool_3d" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                        </div>
-
-                        <!-- Screws & Standoffs -->
-                        <div class="space-y-4">
-                            <h3 class="font-semibold text-gray-900 border-b pb-2 text-purple-700">
-                                Screws & Standoffs
-                            </h3>
-                            <div>
-                                <label class="block text-sm text-gray-600">M3 Screws (Expected: 20)</label>
-                                <input type="number" name="m3_screws" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">M3 Hex Nuts (Expected: 4)</label>
-                                <input type="number" name="m3_hex_nut" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">M3 9+6mm Brass Standoffs (Expected:
-                                    4)</label>
-                                <input type="number" name="m3_9_6mm_brass_standoff" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">M3 10mm Brass Standoffs (Expected: 4)</label>
-                                <input type="number" name="m3_10mm_brass_standoff" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">M3 10+6mm Brass Standoffs (Expected:
-                                    4)</label>
-                                <input type="number" name="m3_10_6mm_brass_standoff" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-gray-600">M3 20+6mm Brass Standoffs (Expected:
-                                    12)</label>
-                                <input type="number" name="m3_20_6mm_brass_standoff" required min="0"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
-                            </div>
+                        <div class="flex gap-2 justify-end">
+                            <button type="button" onclick="clearAll()"
+                                class="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50">
+                                Clear all
+                            </button>
+                            <button type="button" onclick="fillDefaults()"
+                                class="px-3 py-1.5 text-xs rounded-lg bg-purple-600 text-white hover:bg-purple-700 shadow-sm">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>
+                                Fill with expected
+                            </button>
                         </div>
                     </div>
 
-                    <div class="flex justify-end pt-6 border-t border-gray-200">
+                    <!-- Sections grid -->
+                    <div class="space-y-6">
+                        <!-- Structure & Mechanics -->
+                        <section class="border border-gray-200 rounded-xl">
+                            <div
+                                class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span
+                                        class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                                        <i class="fa-solid fa-cube"></i>
+                                    </span>
+                                    <div>
+                                        <h3 class="font-semibold text-gray-900 text-sm">Structure & Mechanics</h3>
+                                        <p class="text-xs text-gray-500">
+                                            Main frame and reaction wheel assembly.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto custom-scrollbar">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-white">
+                                        <tr class="border-b border-gray-200 text-xs text-gray-500 uppercase">
+                                            <th class="px-4 py-2 text-left">Item</th>
+                                            <th class="px-4 py-2 text-center">Expected</th>
+                                            <th class="px-4 py-2 text-center">Actual (after session)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2">
+                                                <span class="font-medium text-gray-900">Structures</span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center text-gray-700">6</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="structures" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2">
+                                                <span class="font-medium text-gray-900">Reaction Wheel</span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="reaction_wheel" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <!-- Electronics -->
+                        <section class="border border-gray-200 rounded-xl">
+                            <div
+                                class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span
+                                        class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                                        <i class="fa-solid fa-microchip"></i>
+                                    </span>
+                                    <div>
+                                        <h3 class="font-semibold text-gray-900 text-sm">Electronics</h3>
+                                        <p class="text-xs text-gray-500">
+                                            Sensors, boards, microcontrollers and power modules.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto custom-scrollbar">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-white">
+                                        <tr class="border-b border-gray-200 text-xs text-gray-500 uppercase">
+                                            <th class="px-4 py-2 text-left">Item</th>
+                                            <th class="px-4 py-2 text-center">Expected</th>
+                                            <th class="px-4 py-2 text-center">Actual (after session)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Sensors & storage -->
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Current
+                                                    Sensors</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">2</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="current_sensors" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Temp
+                                                    Sensors</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="temp_sensors" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">FRAM</span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="fram" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">SD
+                                                    Card</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="sd_card" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">MPU</span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="mpu" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">GPS</span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="gps" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Motor
+                                                    Driver</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="motor_driver" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+
+                                        <!-- Boards -->
+                                        <tr class="border-t border-gray-100 bg-gray-50/60">
+                                            <td colspan="3" class="px-4 py-1 text-xs text-gray-500 uppercase">
+                                                Boards
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">CDHS
+                                                    Board</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="cdhs_board" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">EPS
+                                                    Board</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="eps_board" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">ADCS
+                                                    Board</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="adcs_board" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+
+                                        <!-- ESP32 & modules -->
+                                        <tr class="border-t border-gray-100 bg-gray-50/60">
+                                            <td colspan="3" class="px-4 py-1 text-xs text-gray-500 uppercase">
+                                                ESP32 & Power Modules
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span
+                                                    class="font-medium text-gray-900">ESP32-CAM</span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="esp32_cam" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">ESP32</span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="esp32" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span
+                                                    class="font-medium text-gray-900">Magnetorquer</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="magnetorquer" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Buck
+                                                    Converter Module</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="buck_converter_module" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Li-Ion
+                                                    Battery</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="li_ion_battery" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Pin
+                                                    Sockets</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">4</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="pin_socket" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <!-- Tools -->
+                        <section class="border border-gray-200 rounded-xl">
+                            <div
+                                class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span
+                                        class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                                        <i class="fa-solid fa-screwdriver-wrench"></i>
+                                    </span>
+                                    <div>
+                                        <h3 class="font-semibold text-gray-900 text-sm">Tools</h3>
+                                        <p class="text-xs text-gray-500">
+                                            Make sure all tools return to the kit after the session.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto custom-scrollbar">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-white">
+                                        <tr class="border-b border-gray-200 text-xs text-gray-500 uppercase">
+                                            <th class="px-4 py-2 text-left">Item</th>
+                                            <th class="px-4 py-2 text-center">Expected</th>
+                                            <th class="px-4 py-2 text-center">Actual (after session)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Phillips
+                                                    Screwdriver</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="phillips_screwdriver" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Screw
+                                                    Gauge 3D</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="screw_gauge_3d" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Standoff
+                                                    Tool 3D</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">1</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="standoff_tool_3d" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <!-- Screws & Standoffs -->
+                        <section class="border border-gray-200 rounded-xl">
+                            <div
+                                class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span
+                                        class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                                        <i class="fa-solid fa-bolt"></i>
+                                    </span>
+                                    <div>
+                                        <h3 class="font-semibold text-gray-900 text-sm">Screws & Standoffs</h3>
+                                        <p class="text-xs text-gray-500">
+                                            Count small hardware carefully; these are easy to lose.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto custom-scrollbar">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-white">
+                                        <tr class="border-b border-gray-200 text-xs text-gray-500 uppercase">
+                                            <th class="px-4 py-2 text-left">Item</th>
+                                            <th class="px-4 py-2 text-center">Expected</th>
+                                            <th class="px-4 py-2 text-center">Actual (after session)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">M3
+                                                    Screws</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">20</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="m3_screws" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">M3 Hex
+                                                    Nuts</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">4</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="m3_hex_nut" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">M3 9+6mm
+                                                    Brass Standoffs</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">4</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="m3_9_6mm_brass_standoff" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">M3 10mm
+                                                    Brass Standoffs</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">4</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="m3_10mm_brass_standoff" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">M3 10+6mm
+                                                    Brass Standoffs</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">4</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="m3_10_6mm_brass_standoff" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">M3 20+6mm
+                                                    Brass Standoffs</span></td>
+                                            <td class="px-4 py-2 text-center text-gray-700">12</td>
+                                            <td class="px-4 py-2 text-center">
+                                                <input type="number" name="m3_20_6mm_brass_standoff" required min="0"
+                                                    class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- Submit -->
+                    <div class="flex justify-end pt-4 border-t border-gray-200">
                         <button type="submit"
-                            class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm">
+                            class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-paper-plane"></i>
                             Submit Check
                         </button>
                     </div>

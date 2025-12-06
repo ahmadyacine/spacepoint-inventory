@@ -315,6 +315,49 @@ def init_db():
     add_column_if_not_exists("cubesats", "m3_10_6mm_brass_standoff", "INTEGER DEFAULT 0")
     add_column_if_not_exists("cubesats", "m3_20_6mm_brass_standoff", "INTEGER DEFAULT 0")
 
+        # ---------- WORKSHOPS: LEAD INSTRUCTOR COLUMN ----------
+
+    add_column_if_not_exists(
+        "workshops",
+        "lead_instructor_id",
+        "INTEGER REFERENCES instructors(id)"
+    )
+
+    cur.execute(
+        """
+        UPDATE workshops w
+        SET lead_instructor_id = w.instructor_id
+        WHERE w.lead_instructor_id IS NULL
+          AND w.instructor_id IS NOT NULL;
+        """
+    )
+
+    # ---------- WORKSHOP INSTRUCTORS (MANY-TO-MANY) ----------
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workshop_instructors (
+            id SERIAL PRIMARY KEY,
+            workshop_id INTEGER NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+            instructor_id INTEGER NOT NULL REFERENCES instructors(id),
+            is_lead BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (workshop_id, instructor_id)
+        );
+        """
+    )
+
+    cur.execute(
+        """
+        INSERT INTO workshop_instructors (workshop_id, instructor_id, is_lead)
+        SELECT id AS workshop_id, instructor_id, TRUE AS is_lead
+        FROM workshops
+        WHERE instructor_id IS NOT NULL
+        ON CONFLICT (workshop_id, instructor_id) DO NOTHING;
+        """
+    )
+
+
     conn.commit()
     cur.close()
     conn.close()

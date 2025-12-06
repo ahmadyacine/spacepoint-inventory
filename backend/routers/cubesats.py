@@ -76,6 +76,7 @@ def row_to_cubesat(row) -> CubesatOut:
         location=row["location"],
         delivered_date=row["delivereddate"],
         instructor_id=row["instructorid"],
+        instructor_name=row.get("instructor_name"),  # 👈 NEW
 
         # Existing items
         structures=row["structures"],
@@ -113,6 +114,7 @@ def row_to_cubesat(row) -> CubesatOut:
         is_received=bool(row.get("is_received", False)),
         received_date=row.get("received_date"),
     )
+
 
 
 @router.post("/", response_model=CubesatOut)
@@ -213,38 +215,35 @@ def list_cubesats(
 
     if current_user["role"] == "instructor":
         cursor.execute(
-            "SELECT * FROM cubesats WHERE instructorid = %s AND is_received = TRUE;",
+            """
+            SELECT 
+                c.*,
+                i.name AS instructor_name
+            FROM cubesats c
+            LEFT JOIN instructors i
+                ON c.instructorid = i.id
+            WHERE c.instructorid = %s
+              AND c.is_received = TRUE;
+            """,
             (current_user["instructor_id"],),
         )
     else:
-        cursor.execute("SELECT * FROM cubesats;")
+        cursor.execute(
+            """
+            SELECT 
+                c.*,
+                i.name AS instructor_name
+            FROM cubesats c
+            LEFT JOIN instructors i
+                ON c.instructorid = i.id;
+            """
+        )
 
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
 
     return [row_to_cubesat(r) for r in rows]
-
-
-@router.get("/{cubesat_id}", response_model=CubesatOut)
-def get_cubesat(
-    cubesat_id: int,
-    current_user=Depends(require_role("admin", "operations", "instructor")),
-):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM cubesats WHERE id = %s;",
-        (cubesat_id,),
-    )
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-
-    if not row:
-        raise HTTPException(status_code=404, detail="Cubesat not found")
-
-    return row_to_cubesat(row)
 
 
 @router.put("/{cubesat_id}", response_model=CubesatOut)

@@ -5,6 +5,8 @@ from ..deps import require_role
 from pydantic import BaseModel
 from typing import Dict, Any
 import json
+from .cubesats import REQUIRED_COUNTS
+
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
@@ -243,3 +245,43 @@ def delete_receipt(
     finally:
         cursor.close()
         conn.close()
+
+@router.get("/{receipt_id}/components")
+def get_receipt_comparison(receipt_id: int, current_user=Depends(require_role("instructor", "admin", "operations"))):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # Get the cubesat_id & submitted items of this receipt
+    cur.execute("""
+        SELECT cubesat_id, items
+        FROM receipts
+        WHERE id = %s
+    """, (receipt_id,))
+    row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(404, "Receipt not found")
+
+    cubesat_id = row["cubesat_id"]
+    submitted_items = eval(row["items"])  # stored as dict text
+
+    # Get expected values from cubesats table
+    cur.execute("SELECT * FROM cubesats WHERE id = %s", (cubesat_id,))
+    cube = cur.fetchone()
+
+    if not cube:
+        raise HTTPException(404, "CubeSat not found")
+
+    comparison = []
+    for comp, expected in REQUIRED_COUNTS.items():
+        submitted = submitted_items.get(comp, 0)
+        diff = submitted - expected
+
+        comparison.append({
+            "component": comp,
+            "expected": expected,
+            "submitted": submitted,
+            "difference": diff
+        })
+
+    return comparison

@@ -3,16 +3,11 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Instructor Dashboard - SpacePoint</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* body {
-            font-family: 'Inter', sans-serif;
-        } */
-
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -69,6 +64,10 @@
         let cubesatsData = [];
         let workshopsData = [];
         let socket = null;
+
+        // pagination for "Your CubeSats"
+        let cubesatsCurrentPage = 1;
+        const CUBESATS_PER_PAGE = 10;
 
         // Required counts for each item in a complete CubeSat kit
         const REQUIRED_COUNTS = {
@@ -251,25 +250,36 @@
             });
         }
 
+        // UPDATED: status badge for cubesats (working / damaged / repeating/repairing)
         function statusBadge(status) {
-            const styles = {
-                'concept': 'bg-gray-100 text-gray-800',
-                'design': 'bg-blue-100 text-blue-800',
-                'development': 'bg-yellow-100 text-yellow-800',
-                'testing': 'bg-purple-100 text-purple-800',
-                'ready': 'bg-green-100 text-green-800',
-                'deployed': 'bg-indigo-100 text-indigo-800',
-                'retired': 'bg-red-100 text-red-800'
-            };
-            // Return a class string only (used inside class="")
-            return `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles['concept']}`;
+            const base =
+                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ";
+            const normalized = (status || "").toLowerCase();
+
+            if (normalized === "working") {
+                return base + "bg-green-100 text-green-800";
+            }
+            if (normalized === "damaged") {
+                return base + "bg-red-100 text-red-800";
+            }
+            if (normalized === "repeating" || normalized === "repairing") {
+                return base + "bg-amber-100 text-amber-800";
+            }
+
+            // fallback – neutral
+            return base + "bg-gray-100 text-gray-800";
         }
 
+        // ============ CUBESATS (Your CubeSats) WITH PAGINATION ============
+
         async function loadCubesats() {
-            const tbody = document.getElementById("cubesats-tbody");
             const emptyEl = document.getElementById("cubesats-empty");
+            const paginationEl = document.getElementById("cubesats-pagination");
+            const tbody = document.getElementById("cubesats-tbody");
+
             tbody.innerHTML = "";
             emptyEl.textContent = "Loading...";
+            paginationEl.classList.add("hidden");
 
             try {
                 const data = await apiFetch("/cubesats/");
@@ -278,68 +288,123 @@
 
                 if (!myCubesats.length) {
                     emptyEl.textContent = "No CubeSats assigned to you.";
+                    paginationEl.classList.add("hidden");
                     return;
                 }
+
                 emptyEl.textContent = "";
-
-                myCubesats.forEach((c) => {
-                    const tr = document.createElement("tr");
-                    tr.className = "border-b border-gray-100 transition-all table-row-hover";
-
-                    const location = c.location || '<span class="text-gray-400 italic">Not set</span>';
-                    const delivered = c.delivered_date
-                        ? new Date(c.delivered_date).toLocaleDateString()
-                        : '<span class="text-gray-400 italic">Pending</span>';
-
-                    let missing = [];
-
-                    for (const [key, reqVal] of Object.entries(REQUIRED_COUNTS)) {
-                        if ((c[key] || 0) < reqVal) {
-                            missing.push({
-                                name: key.replace(/_/g, " "),
-                                current: c[key] || 0,
-                                required: reqVal
-                            });
-                        }
-                    }
-
-                    const missingDisplay = missing.length > 0
-                        ? `<button onclick="openMissingItemsModal(${c.id})"
-                               class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 hover:bg-red-100 transition-colors">
-                               <i class="fa-solid fa-triangle-exclamation"></i> ${missing.length} Missing
-                           </button>`
-                        : `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
-                               <i class="fa-solid fa-check"></i> Complete
-                           </span>`;
-
-                    tr.innerHTML = `
-                        <td class="px-6 py-4 text-sm font-medium text-gray-900">#${c.id}</td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm font-medium text-gray-900">${c.name || "-"}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="${statusBadge(c.status)}">
-                                <i class="fa-solid fa-circle text-[8px]"></i>
-                                <span class="capitalize">${c.status}</span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm text-gray-700">${location}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="text-sm text-gray-700">${delivered}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            ${missingDisplay}
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                cubesatsCurrentPage = 1;
+                renderCubesatsPage();
             } catch (err) {
                 console.error("Error loading cubesats:", err);
                 emptyEl.textContent = "Error loading cubesats.";
+                paginationEl.classList.add("hidden");
             }
         }
+
+        function renderCubesatsPage() {
+            const tbody = document.getElementById("cubesats-tbody");
+            const emptyEl = document.getElementById("cubesats-empty");
+            const paginationEl = document.getElementById("cubesats-pagination");
+            const pageInfo = document.getElementById("cubesats-page-info");
+            const prevBtn = document.getElementById("cubesats-prev");
+            const nextBtn = document.getElementById("cubesats-next");
+
+            tbody.innerHTML = "";
+
+            if (!cubesatsData.length) {
+                emptyEl.textContent = "No CubeSats assigned to you.";
+                paginationEl.classList.add("hidden");
+                return;
+            }
+
+            emptyEl.textContent = "";
+
+            const total = cubesatsData.length;
+            const totalPages = Math.ceil(total / CUBESATS_PER_PAGE) || 1;
+
+            if (cubesatsCurrentPage > totalPages) {
+                cubesatsCurrentPage = totalPages;
+            }
+
+            const startIndex = (cubesatsCurrentPage - 1) * CUBESATS_PER_PAGE;
+            const endIndex = Math.min(startIndex + CUBESATS_PER_PAGE, total);
+            const pageItems = cubesatsData.slice(startIndex, endIndex);
+
+            pageItems.forEach((c) => {
+                const tr = document.createElement("tr");
+                tr.className = "border-b border-gray-100 transition-all table-row-hover";
+
+                const location = c.location || '<span class="text-gray-400 italic">Not set</span>';
+                const delivered = c.delivered_date
+                    ? new Date(c.delivered_date).toLocaleDateString()
+                    : '<span class="text-gray-400 italic">Pending</span>';
+
+                let missing = [];
+
+                for (const [key, reqVal] of Object.entries(REQUIRED_COUNTS)) {
+                    if ((c[key] || 0) < reqVal) {
+                        missing.push({
+                            name: key.replace(/_/g, " "),
+                            current: c[key] || 0,
+                            required: reqVal
+                        });
+                    }
+                }
+
+                const missingDisplay = missing.length > 0
+                    ? `<button onclick="openMissingItemsModal(${c.id})"
+                               class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-100 hover:bg-red-100 transition-colors">
+                               <i class="fa-solid fa-triangle-exclamation"></i> ${missing.length} Missing
+                           </button>`
+                    : `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
+                               <i class="fa-solid fa-check"></i> Complete
+                           </span>`;
+
+                tr.innerHTML = `
+                    <td class="px-6 py-4 text-sm font-medium text-gray-900">#${c.id}</td>
+                    <td class="px-6 py-4">
+                        <div class="text-sm font-medium text-gray-900">${c.name || "-"}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="${statusBadge(c.status)}">
+                            <i class="fa-solid fa-circle text-[8px]"></i>
+                            <span class="capitalize">${c.status}</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="text-sm text-gray-700">${location}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="text-sm text-gray-700">${delivered}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        ${missingDisplay}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            // pagination controls
+            pageInfo.textContent = `Showing ${startIndex + 1}-${endIndex} of ${total} CubeSats`;
+
+            prevBtn.disabled = cubesatsCurrentPage === 1;
+            nextBtn.disabled = cubesatsCurrentPage >= totalPages;
+
+            paginationEl.classList.remove("hidden");
+        }
+
+        function changeCubesatsPage(direction) {
+            const totalPages = Math.ceil(cubesatsData.length / CUBESATS_PER_PAGE) || 1;
+            if (direction === 'prev' && cubesatsCurrentPage > 1) {
+                cubesatsCurrentPage--;
+            } else if (direction === 'next' && cubesatsCurrentPage < totalPages) {
+                cubesatsCurrentPage++;
+            }
+            renderCubesatsPage();
+        }
+
+        // ============ MODALS & OTHER SECTIONS (unchanged) ============
 
         function openMissingItemsModal(id) {
             const cubesat = cubesatsData.find(c => c.id === id);
@@ -558,12 +623,17 @@
         let currentReceiptId = null;
         let currentNotificationId = null;
 
+        // this is your already-fixed version that reads updated components
         async function openReceiptModal(receiptId, notificationId) {
             currentReceiptId = receiptId;
             currentNotificationId = notificationId;
 
             try {
-                const receipt = await apiFetch(`/receipts/${receiptId}`);
+                const [receipt, components] = await Promise.all([
+                    apiFetch(`/receipts/${receiptId}`),
+                    apiFetch(`/receipts/${receiptId}/components`).catch(() => null)
+                ]);
+
                 document.getElementById('receiptId').textContent = `#${receipt.id}`;
                 document.getElementById('receiptDate').textContent = formatDateTime(receipt.created_at);
                 document.getElementById('receiptCubesat').textContent = receipt.cubesat_name;
@@ -571,17 +641,43 @@
 
                 const itemsList = document.getElementById('receiptItems');
                 itemsList.innerHTML = '';
-                const items = JSON.parse(receipt.items);
 
-                Object.entries(items).forEach(([key, value]) => {
-                    const li = document.createElement('li');
-                    li.className = 'flex justify-between text-sm';
-                    li.innerHTML = `
-                        <span class="text-gray-700 capitalize">${key.replace(/_/g, ' ')}</span>
-                        <span class="font-bold text-gray-900">${value} units</span>
-                    `;
-                    itemsList.appendChild(li);
-                });
+                if (components && Array.isArray(components) && components.length > 0) {
+                    components.forEach(item => {
+                        const li = document.createElement('li');
+                        li.className = 'flex justify-between text-sm';
+
+                        const qty =
+                            item.submitted ??
+                            item.expected ??
+                            item.quantity ??
+                            0;
+
+                        li.innerHTML = `
+                            <span class="text-gray-700 capitalize">
+                                ${String(item.component || '').replace(/_/g, ' ')}
+                            </span>
+                            <span class="font-bold text-gray-900">
+                                ${qty} units
+                            </span>
+                        `;
+                        itemsList.appendChild(li);
+                    });
+                } else {
+                    const items = typeof receipt.items === 'string'
+                        ? JSON.parse(receipt.items || '{}')
+                        : (receipt.items || {});
+
+                    Object.entries(items).forEach(([key, value]) => {
+                        const li = document.createElement('li');
+                        li.className = 'flex justify-between text-sm';
+                        li.innerHTML = `
+                            <span class="text-gray-700 capitalize">${key.replace(/_/g, ' ')}</span>
+                            <span class="font-bold text-gray-900">${value} units</span>
+                        `;
+                        itemsList.appendChild(li);
+                    });
+                }
 
                 const approveBtn = document.getElementById('approveReceiptBtn');
                 if (receipt.status === 'approved') {
@@ -616,7 +712,7 @@
                 await apiFetch(`/receipts/${currentReceiptId}/approve`, { method: 'PUT' });
                 closeReceiptModal();
                 loadNotifications();
-                loadCubesats();
+                loadCubesats(); // will re-render with pagination & updated counts
             } catch (error) {
                 console.error('Error approving receipt:', error);
             }
@@ -642,15 +738,16 @@
             connectWebSocket();
         });
     </script>
-
 </head>
 
 <body class="bg-gray-50 min-h-screen flex">
     <!-- Mobile menu button -->
     <div class="lg:hidden fixed top-4 left-4 z-50">
-        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white"><i
-                class="fa-solid fa-bars"></i></button>
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
     </div>
+
     <!-- Sidebar Navigation -->
     <div id="sidebar"
         class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col -translate-x-full lg:translate-x-0">
@@ -663,34 +760,42 @@
         <!-- User Info -->
         <div class="p-4 border-b border-gray-200">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center"><i
-                        class="fa-solid fa-user-graduate text-purple-600"></i></div>
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user-graduate text-purple-600"></i>
+                </div>
                 <div>
                     <p class="font-medium text-gray-900">Instructor</p>
-                    <p class="text-xs text-gray-500">Role: <span id="mobile-user-role"
-                            class="font-semibold text-purple-600 capitalize"></span></p>
+                    <p class="text-xs text-gray-500">
+                        Role:
+                        <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
                 </div>
             </div>
         </div>
         <!-- Main Navigation -->
         <nav class="flex-1 p-4 space-y-2">
             <a href="instructor_dashboard.html"
-                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold"><i
-                    class="fa-solid fa-gauge-high w-5"></i><span>Dashboard</span></a>
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-gauge-high w-5"></i><span>Dashboard</span>
+            </a>
             <a href="cubesat_check.html"
-                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"><i
-                    class="fa-solid fa-clipboard-check w-5"></i><span>CubeSat Check</span></a>
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-clipboard-check w-5"></i><span>CubeSat Check</span>
+            </a>
             <a href="notifications.html"
-                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"><i
-                    class="fa-solid fa-bell w-5"></i><span>Notifications</span></a>
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-bell w-5"></i><span>Notifications</span>
+            </a>
         </nav>
         <!-- Logout Section -->
         <div class="p-4 border-t border-gray-200">
             <button onclick="logout()"
-                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><i
-                    class="fa-solid fa-right-from-bracket w-5"></i><span>Logout</span></button>
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i><span>Logout</span>
+            </button>
         </div>
     </div>
+
     <!-- Main Content -->
     <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
         <!-- Header -->
@@ -709,14 +814,16 @@
                 </div>
             </div>
         </header>
+
         <!-- Content Area -->
         <div class="flex-1 p-6 space-y-8 max-w-7xl mx-auto w-full">
             <!-- Notifications Section -->
             <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div
                     class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white flex justify-between items-center">
-                    <h2 class="text-lg font-semibold flex items-center gap-2"><i
-                            class="fa-solid fa-bell"></i>Notifications</h2>
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-bell"></i>Notifications
+                    </h2>
                 </div>
                 <div class="overflow-x-auto custom-scrollbar">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -737,18 +844,19 @@
                             </tr>
                         </thead>
                         <tbody id="notifications-tbody" class="bg-white divide-y divide-gray-200">
-                            <!-- Notification rows will be injected here -->
                         </tbody>
                     </table>
                 </div>
                 <div id="notifications-empty" class="flex items-center justify-center h-32 text-gray-500"></div>
             </section>
+
             <!-- Upcoming Workshops Section -->
             <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div
                     class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white flex justify-between items-center">
-                    <h2 class="text-lg font-semibold flex items-center gap-2"><i
-                            class="fa-solid fa-calendar-days"></i>Upcoming Workshops</h2>
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-calendar-days"></i>Upcoming Workshops
+                    </h2>
                 </div>
                 <div class="overflow-x-auto custom-scrollbar">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -772,17 +880,18 @@
                             </tr>
                         </thead>
                         <tbody id="workshops-tbody" class="bg-white divide-y divide-gray-200">
-                            <!-- Workshop rows will be injected here -->
                         </tbody>
                     </table>
                 </div>
                 <div id="workshops-empty" class="flex items-center justify-center h-32 text-gray-500"></div>
             </section>
+
             <!-- Your CubeSats Section -->
             <section class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 bg-purple-600 text-white">
-                    <h2 class="text-lg font-semibold flex items-center gap-2"><i
-                            class="fa-solid fa-cubes-stacked"></i>Your CubeSats</h2>
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-cubes-stacked"></i>Your CubeSats
+                    </h2>
                 </div>
                 <div class="overflow-x-auto custom-scrollbar">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -809,16 +918,35 @@
                             </tr>
                         </thead>
                         <tbody id="cubesats-tbody" class="bg-white divide-y divide-gray-200">
-                            <!-- Cubesat rows will be injected here -->
                         </tbody>
                     </table>
                 </div>
                 <div id="cubesats-empty" class="flex items-center justify-center h-32 text-gray-500"></div>
+
+                <!-- NEW: pagination for Your CubeSats -->
+                <div id="cubesats-pagination"
+                    class="px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between hidden">
+                    <p id="cubesats-page-info" class="text-sm text-gray-600"></p>
+                    <div class="inline-flex rounded-md shadow-sm">
+                        <button id="cubesats-prev" onclick="changeCubesatsPage('prev')"
+                            class="relative inline-flex items-center px-3 py-1.5 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="fa-solid fa-chevron-left mr-1 text-xs"></i>
+                            Previous
+                        </button>
+                        <button id="cubesats-next" onclick="changeCubesatsPage('next')"
+                            class="ml-2 relative inline-flex items-center px-3 py-1.5 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+                            Next
+                            <i class="fa-solid fa-chevron-right ml-1 text-xs"></i>
+                        </button>
+                    </div>
+                </div>
             </section>
         </div>
     </div>
+
     <!-- Toast Container -->
     <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col items-end pointer-events-none"></div>
+
     <!-- Workshop Details Modal -->
     <div id="workshopModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm" onclick="closeWorkshopModal()"></div>
@@ -867,10 +995,13 @@
             </div>
             <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
                 <button onclick="closeWorkshopModal()"
-                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">Close</button>
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">
+                    Close
+                </button>
             </div>
         </div>
     </div>
+
     <!-- Missing Items Modal -->
     <div id="missingItemsModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm" onclick="closeMissingItemsModal()"></div>
@@ -884,10 +1015,13 @@
             <div id="missingItemsBody" class="p-6 space-y-3 max-h-[60vh] overflow-y-auto"></div>
             <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end">
                 <button onclick="closeMissingItemsModal()"
-                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">Close</button>
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">
+                    Close
+                </button>
             </div>
         </div>
     </div>
+
     <!-- Receipt Details Modal -->
     <div id="receiptModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
         <div class="absolute inset-0 bg-black bg-opacity-50 backdrop-blur-sm" onclick="closeReceiptModal()"></div>
@@ -923,13 +1057,17 @@
             </div>
             <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
                 <button onclick="closeReceiptModal()"
-                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">Close</button>
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors">
+                    Close
+                </button>
                 <button id="approveReceiptBtn" onclick="approveReceipt()"
-                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors shadow-sm flex items-center gap-2"><i
-                        class="fa-solid fa-check"></i>Approve Receipt</button>
+                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors shadow-sm flex items-center gap-2">
+                    <i class="fa-solid fa-check"></i>Approve Receipt
+                </button>
             </div>
         </div>
     </div>
+
     <!-- Overlay for mobile sidebar -->
     <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
     </div>

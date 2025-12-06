@@ -81,6 +81,7 @@ class CubesatOut(BaseModel):
     location: Optional[str]
     delivered_date: Optional[date]
     instructor_id: Optional[int]
+    instructor_name: Optional[str] = None
 
     # Existing items
     structures: int
@@ -141,13 +142,16 @@ class WorkshopBase(BaseModel):
     workshop_type: str
     status: str
     location: Optional[str] = None
-    instructor_id: Optional[int] = None
     start_date: datetime
     end_date: datetime
     max_participants: Optional[int] = None
     current_participants: int = 0
     requirements: Optional[str] = None
     notes: Optional[str] = None
+
+    # NEW
+    lead_instructor_id: Optional[int] = None                 # main instructor
+    instructor_ids: Optional[List[int]] = None               # list of assigned instructors
 
 
 class WorkshopCreate(WorkshopBase):
@@ -159,9 +163,12 @@ class WorkshopOut(WorkshopBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    # Keep legacy field for compatibility if you want
+    instructor_id: Optional[int] = None                      # alias/legacy
+    instructors: List[int] = []                              # same as instructor_ids but always a list
 
+    class Config:
+        orm_mode = True
 
 class SessionLogCreate(BaseModel):
     cubesat_id: int

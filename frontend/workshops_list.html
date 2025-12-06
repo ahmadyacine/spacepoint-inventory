@@ -41,7 +41,12 @@
     </style>
     <script defer>
         let workshopsData = [];
+        let filteredWorkshops = [];
         let instructorsData = [];
+
+        // Email modal state
+        let emailModalWorkshop = null;
+        let emailModalRecipients = [];
 
         function ensureAuth() {
             const token = getToken();
@@ -52,15 +57,12 @@
                 role: role || 'not set'
             });
 
-            // If no token, redirect to login
             if (!token) {
                 console.log('No token found, redirecting to login');
                 window.location.href = "login.html";
                 return;
             }
 
-            // Allow all authenticated users (admin, operations, instructor)
-            // If role is not set, we'll still allow access but show "unknown" role
             const allowedRoles = ["admin", "operations", "instructor"];
             if (role && !allowedRoles.includes(role)) {
                 console.log('Invalid role, redirecting to login');
@@ -68,18 +70,12 @@
                 return;
             }
 
-            // Update UI with role (if elements exist)
             const userRoleElement = document.getElementById("user-role");
             const mobileUserRoleElement = document.getElementById("mobile-user-role");
 
-            if (userRoleElement) {
-                userRoleElement.textContent = role || 'user';
-            }
-            if (mobileUserRoleElement) {
-                mobileUserRoleElement.textContent = role || 'user';
-            }
+            if (userRoleElement) userRoleElement.textContent = role || 'user';
+            if (mobileUserRoleElement) mobileUserRoleElement.textContent = role || 'user';
 
-            // Store current user info for delete protection
             const currentUser = {
                 username: getUsername() || 'user',
                 role: role || 'user'
@@ -124,8 +120,32 @@
 
         function getInstructorName(instructorId) {
             if (!instructorId) return "-";
-            const instructor = instructorsData.find(i => i.id === instructorId);
-            return instructor ? instructor.name : "-";
+            const ins = instructorsData.find(i => i.id === instructorId);
+            return ins ? ins.name : "-";
+        }
+
+        function getInstructorById(id) {
+            return instructorsData.find(i => i.id === id) || null;
+        }
+
+        function getInstructorNamesList(ids) {
+            if (!ids || !ids.length) return [];
+            return ids
+                .map(id => getInstructorName(id))
+                .filter(n => n !== "-");
+        }
+
+        function populateInstructorFilter() {
+            const select = document.getElementById('filterInstructor');
+            if (!select) return;
+
+            select.innerHTML = '<option value="all">All Instructors</option>';
+            instructorsData.forEach(ins => {
+                const option = document.createElement('option');
+                option.value = ins.id;
+                option.textContent = ins.name;
+                select.appendChild(option);
+            });
         }
 
         async function loadWorkshops() {
@@ -135,7 +155,6 @@
             emptyEl.textContent = "Loading...";
 
             try {
-                // Load workshops and instructors
                 const [workshops, instructors] = await Promise.all([
                     apiFetch("/workshops/"),
                     apiFetch("/instructors/")
@@ -143,6 +162,9 @@
 
                 workshopsData = workshops;
                 instructorsData = instructors;
+                filteredWorkshops = [...workshopsData];
+
+                populateInstructorFilter();
 
                 if (!workshops.length) {
                     emptyEl.textContent = "No workshops found.";
@@ -156,32 +178,69 @@
             }
         }
 
+        function filterWorkshops() {
+            const searchTitle = document.getElementById('searchTitle').value.toLowerCase();
+            const statusFilter = document.getElementById('filterStatus').value;
+            const typeFilter = document.getElementById('filterType').value;
+            const instructorFilter = document.getElementById('filterInstructor').value;
+
+            filteredWorkshops = workshopsData.filter(w => {
+                const titleMatch =
+                    (w.title || '').toLowerCase().includes(searchTitle) ||
+                    (w.description || '').toLowerCase().includes(searchTitle);
+
+                const statusMatch =
+                    statusFilter === 'all' || w.status === statusFilter;
+
+                const typeMatch =
+                    typeFilter === 'all' || w.workshop_type === typeFilter;
+
+                let instructorMatch = true;
+                if (instructorFilter !== 'all') {
+                    const targetId = parseInt(instructorFilter);
+                    const leadId = w.lead_instructor_id || w.instructor_id || null;
+                    const assistantIds = Array.isArray(w.instructor_ids) ? w.instructor_ids : [];
+                    instructorMatch =
+                        (leadId === targetId) ||
+                        assistantIds.includes(targetId);
+                }
+
+                return titleMatch && statusMatch && typeMatch && instructorMatch;
+            });
+
+            renderWorkshops();
+        }
+
         function renderWorkshops() {
             const tbody = document.getElementById("tbody");
             const emptyEl = document.getElementById("empty");
             tbody.innerHTML = "";
 
-            if (!workshopsData.length) {
-                emptyEl.textContent = "No workshops found.";
+            if (!filteredWorkshops.length) {
+                emptyEl.textContent = "No workshops found matching filters.";
                 return;
             } else {
                 emptyEl.textContent = "";
             }
 
-            workshopsData.forEach((workshop) => {
+            filteredWorkshops.forEach((workshop) => {
                 const tr = document.createElement("tr");
                 tr.className = "border-b border-gray-100 hover:bg-gray-50 transition-all";
+
+                const leadName = getInstructorName(
+                    workshop.lead_instructor_id || workshop.instructor_id
+                );
 
                 tr.innerHTML = `
                     <td class="px-6 py-4">
                         <div class="text-sm font-medium text-gray-900">${workshop.title}</div>
-                        <div class="text-sm text-gray-500">${workshop.description || "No description"}</div>
                     </td>
                     <td class="px-6 py-4">
-                        <div class="${workshopTypeBadge(workshop.workshop_type)}">
-                            <i class="fa-solid fa-circle text-[8px]"></i>
-                            <span class="capitalize">${workshop.workshop_type.replace('_', ' ')}</span>
-                        </div>
+                        <div class="text-sm text-gray-700">${leadName}</div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="text-sm text-gray-700">${formatDateTime(workshop.start_date)}</div>
+                        <div class="text-xs text-gray-500">to ${formatDateTime(workshop.end_date)}</div>
                     </td>
                     <td class="px-6 py-4">
                         <div class="${statusBadge(workshop.status)}">
@@ -190,14 +249,10 @@
                         </div>
                     </td>
                     <td class="px-6 py-4">
-                        <div class="text-sm text-gray-700">${workshop.location || "TBD"}</div>
-                    </td>
-                    <td class="px-6 py-4">
-                        <div class="text-sm text-gray-700">${getInstructorName(workshop.instructor_id)}</div>
-                    </td>
-                    <td class="px-6 py-4">
-                        <div class="text-sm text-gray-700">${formatDateTime(workshop.start_date)}</div>
-                        <div class="text-xs text-gray-500">to ${formatDateTime(workshop.end_date)}</div>
+                        <div class="${workshopTypeBadge(workshop.workshop_type)}">
+                            <i class="fa-solid fa-circle text-[8px]"></i>
+                            <span class="capitalize">${workshop.workshop_type.replace('_', ' ')}</span>
+                        </div>
                     </td>
                     <td class="px-6 py-4">
                         <div class="text-sm text-gray-700">
@@ -206,10 +261,21 @@
                     </td>
                     <td class="px-6 py-4">
                         <div class="flex items-center justify-center space-x-2">
+                            <button onclick="openDetailsModal(${workshop.id})" 
+                                class="inline-flex items-center px-2 py-1 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-md border border-purple-100 transition-colors"
+                                title="View Details">
+                                <i class="fa-solid fa-eye mr-1"></i>
+                                View
+                            </button>
                             <button onclick="editWorkshop(${workshop.id})" 
                                 class="inline-flex items-center p-1.5 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
                                 title="Edit Workshop">
                                 <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <button onclick="openEmailModal(${workshop.id})" 
+                                class="inline-flex items-center p-1.5 text-sm text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-md transition-colors"
+                                title="Send email to instructors">
+                                <i class="fa-solid fa-envelope-open-text"></i>
                             </button>
                             <button onclick="deleteWorkshop(${workshop.id})" 
                                 class="inline-flex items-center p-1.5 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors"
@@ -223,13 +289,274 @@
             });
         }
 
-        async function editWorkshop(id) {
+        /* ---------- DETAILS MODAL ---------- */
+
+        function openDetailsModal(id) {
+            const workshop = workshopsData.find(w => w.id === id);
+            if (!workshop) return;
+
+            const modal = document.getElementById('detailsModal');
+            const content = document.getElementById('detailsModalContent');
+
+            const leadName = getInstructorName(
+                workshop.lead_instructor_id || workshop.instructor_id
+            );
+            const assistantNames = getInstructorNamesList(workshop.instructor_ids)
+                .filter(n => n !== leadName);
+
+            document.getElementById('detailsTitle').textContent = workshop.title;
+            document.getElementById('detailsDescription').textContent = workshop.description || "No description provided.";
+            document.getElementById('detailsLocation').textContent = workshop.location || "TBD";
+            document.getElementById('detailsType').textContent = workshop.workshop_type ? workshop.workshop_type.replace('_', ' ') : "-";
+            document.getElementById('detailsStatus').textContent = workshop.status ? workshop.status.replace('_', ' ') : "-";
+            document.getElementById('detailsLeadInstructor').textContent = leadName;
+
+            const assistantsContainer = document.getElementById('detailsAssistants');
+            assistantsContainer.innerHTML = assistantNames.length
+                ? assistantNames.map(n => `
+                    <span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs border border-purple-200">
+                        ${n}
+                    </span>
+                `).join('')
+                : '<span class="text-xs text-gray-400">No assistant instructors assigned.</span>';
+
+            document.getElementById('detailsStart').textContent = formatDateTime(workshop.start_date);
+            document.getElementById('detailsEnd').textContent = formatDateTime(workshop.end_date);
+            document.getElementById('detailsParticipants').textContent =
+                `${workshop.current_participants} / ${workshop.max_participants || '∞'}`;
+
+            document.getElementById('detailsRequirements').textContent =
+                workshop.requirements || "No specific requirements.";
+            document.getElementById('detailsNotes').textContent =
+                workshop.notes || "No additional notes.";
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+                content.classList.add('scale-100');
+            }, 10);
+        }
+
+        function closeDetailsModal() {
+            const modal = document.getElementById('detailsModal');
+            const content = document.getElementById('detailsModalContent');
+
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        /* ---------- EMAIL MODAL ---------- */
+
+        function buildDefaultEmailSubject(workshop) {
+            const title = workshop.title || "SpacePoint Workshop";
+            return `[SpacePoint] Workshop Invitation – ${title}`;
+        }
+
+        function buildDefaultEmailBody(workshop) {
+            const title = workshop.title || "SpacePoint Workshop";
+            const location = workshop.location || "TBD";
+            const description = workshop.description || "No description provided.";
+
+            const start = formatDateTime(workshop.start_date);
+            const end = formatDateTime(workshop.end_date);
+
+            return `Hello,
+
+You have been assigned to the following SpacePoint workshop:
+
+Title: ${title}
+Location: ${location}
+Start: ${start}
+End:   ${end}
+
+Description:
+${description}
+
+We have attached a calendar invite (.ics) so you can add it directly to your calendar.
+
+Best regards,
+SpacePoint Team`;
+        }
+
+        function openEmailModal(id) {
+            const workshop = workshopsData.find(w => w.id === id);
+            if (!workshop) return;
+
+            emailModalWorkshop = workshop;
+
+            // Compute recipients from lead + instructors
+            const recipientSet = new Map();
+
+            const leadId = workshop.lead_instructor_id || workshop.instructor_id;
+            if (leadId) {
+                const lead = getInstructorById(leadId);
+                if (lead && lead.email) {
+                    recipientSet.set(lead.email, { name: lead.name, email: lead.email });
+                }
+            }
+
+            const assistantIds = Array.isArray(workshop.instructor_ids) ? workshop.instructor_ids : [];
+            assistantIds.forEach(id => {
+                const ins = getInstructorById(id);
+                if (ins && ins.email && !recipientSet.has(ins.email)) {
+                    recipientSet.set(ins.email, { name: ins.name, email: ins.email });
+                }
+            });
+
+            emailModalRecipients = Array.from(recipientSet.values());
+
+            // Fill form fields
+            const subjectInput = document.getElementById('emailSubject');
+            const bodyTextarea = document.getElementById('emailBody');
+            const recipientsList = document.getElementById('emailRecipientsList');
+
+            subjectInput.value = buildDefaultEmailSubject(workshop);
+            bodyTextarea.value = buildDefaultEmailBody(workshop);
+
+            // Recipients chips
+            recipientsList.innerHTML = emailModalRecipients.length
+                ? emailModalRecipients.map(r => `
+                    <span class="inline-flex items-center px-2 py-1 rounded-full bg-purple-50 text-purple-700 text-xs border border-purple-200 mr-1 mb-1">
+                        <i class="fa-solid fa-user mr-1"></i>
+                        ${r.name || r.email}
+                        <span class="ml-1 text-[10px] text-gray-500">&lt;${r.email}&gt;</span>
+                    </span>
+                `).join('')
+                : '<span class="text-xs text-gray-400">No instructors with email assigned.</span>';
+
+            // Show modal
+            const modal = document.getElementById('emailModal');
+            const content = document.getElementById('emailModalContent');
+
+            modal.classList.remove('hidden');
+            modal.classList.remove('opacity-0');
+            content.classList.remove('scale-95');
+            content.classList.add('scale-100');
+
+            // Update preview
+            updateEmailPreview();
+        }
+
+        function closeEmailModal() {
+            const modal = document.getElementById('emailModal');
+            const content = document.getElementById('emailModalContent');
+
+            modal.classList.add('opacity-0');
+            content.classList.remove('scale-100');
+            content.classList.add('scale-95');
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function updateEmailPreview() {
+            if (!emailModalWorkshop) return;
+
+            const subject = document.getElementById('emailSubject').value || "(no subject)";
+            const body = document.getElementById('emailBody').value || "";
+
+            const title = emailModalWorkshop.title || "SpacePoint Workshop";
+            const location = emailModalWorkshop.location || "TBD";
+            const description = emailModalWorkshop.description || "No description provided.";
+            const start = formatDateTime(emailModalWorkshop.start_date);
+            const end = formatDateTime(emailModalWorkshop.end_date);
+
+            const year = new Date().getFullYear();
+
+            // logo URL (change to your real hosted logo if needed)
+            const logoUrl = "https://spacepoint.ae/wp-content/uploads/2023/12/space-2d-silver.png";
+
+            const preview = document.getElementById('emailPreview');
+            preview.innerHTML = `
+                <div class="border border-gray-200 rounded-xl overflow-hidden shadow-sm bg-white">
+                    <div class="px-4 py-3 bg-gradient-to-r from-[#241134] to-[#653f84] flex items-center justify-between">
+                        <img src="${logoUrl}" alt="SpacePoint" class="h-8 object-contain">
+                        
+                    </div>
+                    <div class="px-4 py-3 border-b border-gray-200">
+                        <p class="text-xs text-gray-500 mb-1">Subject</p>
+                        <p class="text-sm font-medium text-gray-900">${subject}</p>
+                    </div>
+                    <div class="px-4 py-4 text-sm text-gray-700 space-y-3">
+                        <p>Hello <span class="font-semibold">Instructor</span>,</p>
+                        <p>
+                            You have been assigned to the following <span class="font-semibold">SpacePoint</span> workshop:
+                        </p>
+                        <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs space-y-1">
+                            <p><span class="font-semibold text-gray-800">Title:</span> ${title}</p>
+                            <p><span class="font-semibold text-gray-800">Location:</span> ${location}</p>
+                            <p><span class="font-semibold text-gray-800">Start:</span> ${start}</p>
+                            <p><span class="font-semibold text-gray-800">End:</span> ${end}</p>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-gray-800 text-xs mb-1">Workshop overview</p>
+                            <p class="text-xs text-gray-600">${description}</p>
+                        </div>
+                        <div class="border-t border-gray-200 pt-3 text-xs text-gray-600 whitespace-pre-line">
+                            ${body.replace(/</g, "&lt;").replace(/>/g, "&gt;")}
+                        </div>
+                    </div>
+                    <div class="px-4 py-3 border-t border-gray-200 bg-gray-50 text-[11px] text-gray-500 flex justify-between">
+                        <span>© ${year} SpacePoint. All rights reserved.</span>
+                        <span>Sent from SpacePoint Inventory System</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function submitEmailModal(event) {
+            event.preventDefault();
+            if (!emailModalWorkshop) return;
+
+            if (!emailModalRecipients.length) {
+                showNotification('No recipients with email to send to.', 'error');
+                return;
+            }
+
+            const subject = document.getElementById('emailSubject').value.trim();
+            const body = document.getElementById('emailBody').value.trim();
+
+            if (!subject) {
+                showNotification('Please add a subject.', 'error');
+                return;
+            }
+            if (!body) {
+                showNotification('Please add email body text.', 'error');
+                return;
+            }
+
+            try {
+                const res = await apiFetch(`/workshops/${emailModalWorkshop.id}/send-invitations`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        subject,
+                        body
+                    })
+                });
+
+                showNotification(res.message || 'Email invitations sent', 'success');
+                closeEmailModal();
+            } catch (err) {
+                console.error('Error sending workshop emails:', err);
+                showNotification('Failed to send email invitations', 'error');
+            }
+        }
+
+        /* ---------- CRUD / UTIL ---------- */
+
+        function editWorkshop(id) {
             window.location.href = `workshop_edit.html?id=${id}`;
         }
 
         async function deleteWorkshop(id) {
             const workshop = workshopsData.find(w => w.id === id);
-
             if (!workshop) return;
 
             if (confirm(`Are you sure you want to delete workshop "${workshop.title}"? This action cannot be undone.`)) {
@@ -238,8 +565,8 @@
                         method: 'DELETE'
                     });
 
-                    // Remove from local data and re-render
                     workshopsData = workshopsData.filter(w => w.id !== id);
+                    filteredWorkshops = filteredWorkshops.filter(w => w.id !== id);
                     renderWorkshops();
 
                     showNotification(`Workshop "${workshop.title}" deleted successfully`, 'success');
@@ -264,12 +591,10 @@
 
             document.body.appendChild(notification);
 
-            // Animate in
             setTimeout(() => {
                 notification.classList.remove('translate-x-full');
             }, 100);
 
-            // Remove after 3 seconds
             setTimeout(() => {
                 notification.classList.add('translate-x-full');
                 setTimeout(() => {
@@ -283,9 +608,39 @@
             window.location.href = "login.html";
         }
 
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+
         window.addEventListener("DOMContentLoaded", () => {
             ensureAuth();
             loadWorkshops();
+
+            const detailsModal = document.getElementById('detailsModal');
+            if (detailsModal) {
+                detailsModal.addEventListener('click', (e) => {
+                    if (e.target === detailsModal) {
+                        closeDetailsModal();
+                    }
+                });
+            }
+
+            const emailModal = document.getElementById('emailModal');
+            if (emailModal) {
+                emailModal.addEventListener('click', (e) => {
+                    if (e.target === emailModal) {
+                        closeEmailModal();
+                    }
+                });
+            }
+
+            const subj = document.getElementById('emailSubject');
+            const body = document.getElementById('emailBody');
+            if (subj) subj.addEventListener('input', updateEmailPreview);
+            if (body) body.addEventListener('input', updateEmailPreview);
         });
     </script>
 </head>
@@ -413,6 +768,58 @@
             </div>
         </div>
 
+        <!-- Filters -->
+        <div class="p-6 border-b border-gray-200 bg-gray-50">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label for="searchTitle" class="block text-sm font-medium text-gray-700 mb-1">Search by
+                        title</label>
+                    <div class="relative rounded-md shadow-sm">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fa-solid fa-search text-gray-400"></i>
+                        </div>
+                        <input type="text" id="searchTitle" oninput="filterWorkshops()"
+                            class="focus:ring-purple-500 focus:border-purple-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2"
+                            placeholder="Search workshops...">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="filterStatus" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select id="filterStatus" onchange="filterWorkshops()"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm rounded-md">
+                        <option value="all">All Statuses</option>
+                        <option value="upcoming">Upcoming</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="filterType" class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <select id="filterType" onchange="filterWorkshops()"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm rounded-md">
+                        <option value="all">All Types</option>
+                        <option value="demo">Demo</option>
+                        <option value="online">Online Event</option>
+                        <option value="hands_on">Hands-on Workshop</option>
+                        <option value="training">Training Session</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="filterInstructor"
+                        class="block text-sm font-medium text-gray-700 mb-1">Instructor</label>
+                    <select id="filterInstructor" onchange="filterWorkshops()"
+                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm rounded-md">
+                        <option value="all">All Instructors</option>
+                        <!-- Options injected from JS -->
+                    </select>
+                </div>
+            </div>
+        </div>
+
         <!-- Workshops Table -->
         <div class="flex-1 p-6">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -422,14 +829,12 @@
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Workshop
                                 </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Type</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Location
-                                </th>
-                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Instructor
-                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Lead
+                                    Instructor</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Date & Time
                                 </th>
+                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Type</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">
                                     Participants</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Actions
@@ -437,7 +842,7 @@
                             </tr>
                         </thead>
                         <tbody id="tbody" class="bg-white divide-y divide-gray-200">
-                            <!-- Rows will be injected here -->
+                            <!-- Rows injected here -->
                         </tbody>
                     </table>
                 </div>
@@ -445,6 +850,186 @@
                 <!-- Empty state message -->
                 <div id="empty" class="flex items-center justify-center h-64 text-gray-500"></div>
             </div>
+        </div>
+    </div>
+
+    <!-- Details Modal -->
+    <div id="detailsModal"
+        class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-200">
+        <div id="detailsModalContent"
+            class="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 transform scale-95 transition-transform duration-200 max-h-[85vh] flex flex-col">
+            <div class="p-5 border-b border-gray-200 flex items-start justify-between gap-3">
+                <div>
+                    <h3 id="detailsTitle" class="text-lg font-bold text-gray-900">Workshop Title</h3>
+                    <p id="detailsDescription" class="mt-1 text-sm text-gray-600">
+                        Description goes here...
+                    </p>
+                </div>
+                <button onclick="closeDetailsModal()" class="text-gray-400 hover:text-gray-600 transition-colors mt-1">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Scrollable Body -->
+            <div class="p-5 flex-1 overflow-y-auto space-y-4">
+                <!-- Top Info -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-2">
+                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Basic Info</h4>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium text-gray-500">Type:</span>
+                            <span id="detailsType"
+                                class="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs border border-purple-100">
+                                -
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium text-gray-500">Status:</span>
+                            <span id="detailsStatus"
+                                class="px-2 py-0.5 bg-gray-100 text-gray-800 rounded-full text-xs border border-gray-200">
+                                -
+                            </span>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 mb-0.5">Location</p>
+                            <p id="detailsLocation" class="text-sm text-gray-800">-</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Instructors</h4>
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 mb-0.5">Lead Instructor</p>
+                            <p id="detailsLeadInstructor" class="text-sm text-gray-800">-</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 mb-0.5">Assistant Instructors</p>
+                            <div id="detailsAssistants" class="flex flex-wrap gap-1">
+                                <!-- Assistant chips -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dates & Participants -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 mb-0.5">Start</p>
+                        <p id="detailsStart" class="text-sm text-gray-800">-</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 mb-0.5">End</p>
+                        <p id="detailsEnd" class="text-sm text-gray-800">-</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 mb-0.5">Participants</p>
+                        <p id="detailsParticipants" class="text-sm text-gray-800">-</p>
+                    </div>
+                </div>
+
+                <!-- Requirements & Notes -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 mb-0.5">Requirements</p>
+                        <p id="detailsRequirements" class="text-sm text-gray-800 whitespace-pre-line">
+                            -
+                        </p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-medium text-gray-500 mb-0.5">Notes</p>
+                        <p id="detailsNotes" class="text-sm text-gray-800 whitespace-pre-line">
+                            -
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+                <button onclick="closeDetailsModal()"
+                    class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email Composer Modal -->
+    <div id="emailModal"
+        class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-start justify-center opacity-0 transition-opacity duration-200 overflow-y-auto py-8">
+        <div id="emailModalContent"
+            class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl mx-4 transform scale-95 transition-transform duration-200 flex flex-col">
+            <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900">Send Email Invitations</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">Review and customize the email before sending it to the
+                        instructors.</p>
+                </div>
+                <button onclick="closeEmailModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <form onsubmit="submitEmailModal(event)" class="flex-1 flex flex-col">
+                <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-0 overflow-hidden">
+                    <!-- Left side: form -->
+                    <div class="p-5 space-y-4 overflow-y-auto border-r border-gray-100">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1.5">Recipients</label>
+                            <div id="emailRecipientsList"
+                                class="flex flex-wrap gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 min-h-[40px]">
+                                <!-- chips injected -->
+                            </div>
+                        </div>
+
+                        <div>
+                            <label for="emailSubject"
+                                class="block text-xs font-medium text-gray-600 mb-1.5">Subject</label>
+                            <input id="emailSubject" type="text"
+                                class="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                placeholder="Email subject">
+                        </div>
+
+                        <div>
+                            <label for="emailBody" class="block text-xs font-medium text-gray-600 mb-1.5">
+                                Email body (plain text)
+                            </label>
+                            <textarea id="emailBody" rows="10"
+                                class="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                placeholder="Write your message here..."></textarea>
+                            <p class="mt-1 text-[11px] text-gray-400">
+                                This text will be used inside a branded SpacePoint HTML email and also as the plain-text
+                                fallback.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Right side: preview -->
+                    <div class="p-5 bg-gray-50 overflow-y-auto">
+                        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Preview</p>
+                        <div id="emailPreview" class="text-xs text-gray-700 max-h-[65vh] overflow-y-auto pr-2">
+                            <!-- Live preview injected here -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-5 py-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+                    <p class="text-[11px] text-gray-500">
+                        A calendar invite (.ics) will be attached automatically for this workshop.
+                    </p>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="closeEmailModal()"
+                            class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                            class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors inline-flex items-center gap-2">
+                            <i class="fa-solid fa-paper-plane text-xs"></i>
+                            Send Invitations
+                        </button>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
 
