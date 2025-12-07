@@ -245,6 +245,34 @@ def list_cubesats(
 
     return [row_to_cubesat(r) for r in rows]
 
+@router.get("/{cubesat_id}", response_model=CubesatOut)
+def get_cubesat(
+    cubesat_id: int,
+    current_user = Depends(require_role("admin", "operations", "instructor")),
+):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT 
+            c.*,
+            i.name AS instructor_name
+        FROM cubesats c
+        LEFT JOIN instructors i
+            ON c.instructorid = i.id
+        WHERE c.id = %s;
+        """,
+        (cubesat_id,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Cubesat not found")
+
+    return row_to_cubesat(row)
 
 @router.put("/{cubesat_id}", response_model=CubesatOut)
 def update_cubesat(
