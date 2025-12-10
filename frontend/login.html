@@ -34,7 +34,7 @@
                 console.log("Login response:", data);
 
                 // Pass instructor_id and user_id to setAuth function
-                setAuth(data.token, data.role, data.username, data.instructor_id, data.id);
+                setAuth(data.token, data.role, data.username, data.instructor_id, data.id, data.full_name);
 
                 console.log("Stored auth data:", {
                     token: sessionStorage.getItem("token"),
@@ -50,6 +50,9 @@
                 } else if (data.role === "instructor") {
                     console.log("Redirecting to instructor dashboard");
                     window.location.href = "instructor_dashboard.html";
+                } else if (data.role === "coo") {
+                    console.log("Redirecting to COO dashboard");
+                    window.location.href = "coo_package_requests.html";
                 } else {
                     console.log("Unknown role, redirecting to login");
                     errorEl.textContent = "Unknown user role";

@@ -59,35 +59,36 @@
         let currentUser = null;
 
         function ensureAuth() {
-            const token = sessionStorage.getItem("token");
-            const role = sessionStorage.getItem("role");
-            const username = sessionStorage.getItem("username");
+                const token = getToken();
+                const role = getRole();
 
-            if (!token || !role) {
-                window.location.href = "login.html";
-                return;
+                if (!token || (role !== "admin" && role !== "operations")) {
+                    window.location.href = "login.html";
+                    return;
+                }
+
+                // Role badge (header + sidebar role)
+                const roleLabel = role; // أو حاب تخليها Capitalize/Pretty Name
+                const userRoleEl = document.getElementById("user-role");
+                const mobileRoleEl = document.getElementById("mobile-user-role");
+
+                if (userRoleEl) userRoleEl.textContent = roleLabel;
+                if (mobileRoleEl) mobileRoleEl.textContent = roleLabel;
+
+                // Hide user management features for non-admin users
+                if (role !== "admin") {
+                    const userElements = document.querySelectorAll('[data-admin-only]');
+                    userElements.forEach(el => el.style.display = 'none');
+                }
+
+                // 👇 هنا نستخدم full_name المخزّن في sessionStorage
+                const fullName = getFullName() || "Admin User";
+                const sidebarNameSpan = document.getElementById("sidebar-full-name");
+
+                if (sidebarNameSpan) {
+                    sidebarNameSpan.textContent = fullName;
+                }
             }
-
-            currentUser = {
-                role: role,
-                username: username
-            };
-
-            if (currentUser.role !== "admin" && currentUser.role !== "operations") {
-                alert("Access denied. Admin/Operations only.");
-                window.location.href = "login.html";
-                return;
-            }
-
-            document.getElementById("user-role").textContent = currentUser.role;
-            document.getElementById("mobile-user-role").textContent = currentUser.role;
-
-            // Hide user management features for non-admin users
-            if (currentUser.role !== "admin") {
-                const userElements = document.querySelectorAll('[data-admin-only]');
-                userElements.forEach(el => el.style.display = 'none');
-            }
-        }
 
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -278,7 +279,7 @@
                     <i class="fa-solid fa-user text-purple-600"></i>
                 </div>
                 <div>
-                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p id="sidebar-full-name" class="font-medium text-gray-900">Admin User</p>
                     <p class="text-xs text-gray-500">
                         Role: <span class="font-semibold text-purple-600 capitalize" id="mobile-user-role">admin</span>
                     </p>
@@ -322,6 +323,17 @@
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                 <i class="fa-solid fa-receipt w-5"></i>
                 <span>Generate Receipt</span>
+            </a>
+            <!-- New Refill Dashboard item -->
+            <a href="cubesats_refill.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-warehouse w-5"></i>
+                <span>Refill Dashboard</span>
+            </a>
+            <a href="reports_admin.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-flag w-5"></i>
+                <span>Reports</span>
             </a>
             <a href="users.html" data-admin-only
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">

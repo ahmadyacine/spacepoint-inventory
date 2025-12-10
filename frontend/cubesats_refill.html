@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Refill Dashboard – SpacePoint</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+    </style>
+
+    <script defer>
+        // ----- CONSTANTS (mirror REQUIRED_COUNTS from backend) -----
+        const REQUIRED_COUNTS = {
+            structures: 6,
+            current_sensors: 2,
+            temp_sensors: 1,
+            fram: 1,
+            sd_card: 1,
+            reaction_wheel: 1,
+            mpu: 1,
+            gps: 1,
+            motor_driver: 1,
+            phillips_screwdriver: 1,
+            screw_gauge_3d: 1,
+            standoff_tool_3d: 1,
+            cdhs_board: 1,
+            eps_board: 1,
+            adcs_board: 1,
+            esp32_cam: 1,
+            esp32: 1,
+            magnetorquer: 1,
+            buck_converter_module: 1,
+            li_ion_battery: 1,
+            pin_socket: 1,
+            m3_screws: 20,
+            m3_hex_nut: 4,
+            m3_9_6mm_brass_standoff: 4,
+            m3_10mm_brass_standoff: 4,
+            m3_10_6mm_brass_standoff: 4,
+            m3_20_6mm_brass_standoff: 12,
+        };
+
+        const LABELS_MAP = {
+            structures: "Structures",
+            current_sensors: "Current Sensors",
+            temp_sensors: "Temperature Sensors",
+            fram: "FRAM",
+            sd_card: "SD Card",
+            reaction_wheel: "Reaction Wheel",
+            mpu: "MPU",
+            gps: "GPS",
+            motor_driver: "Motor Driver",
+            phillips_screwdriver: "Phillips Screwdriver",
+            screw_gauge_3d: "Screw Gauge 3D",
+            standoff_tool_3d: "Standoff Tool 3D",
+            cdhs_board: "CDHS Board",
+            eps_board: "EPS Board",
+            adcs_board: "ADCS Board",
+            esp32_cam: "ESP32-CAM",
+            esp32: "ESP32",
+            magnetorquer: "Magnetorquer",
+            buck_converter_module: "Buck Converter Module",
+            li_ion_battery: "Li-ion Battery",
+            pin_socket: "Pin Socket",
+            m3_screws: "M3 Screws",
+            m3_hex_nut: "M3 Hex Nut",
+            m3_9_6mm_brass_standoff: "M3 9+6mm Brass Standoff",
+            m3_10mm_brass_standoff: "M3 10mm Brass Standoff",
+            m3_10_6mm_brass_standoff: "M3 10+6mm Brass Standoff",
+            m3_20_6mm_brass_standoff: "M3 20+6mm Brass Standoff",
+        };
+
+        let cubesatsData = [];
+        let overallChart = null;
+        let missingItemsChart = null;
+        let selectedCubesat = null;
+
+        // used for package request creation (from incomplete summary selection)
+        let currentPackageTotals = null;
+
+        // My Package Requests (for this admin/operations user)
+        let myPackageRequests = [];
+
+        // ---------- AUTH ----------
+        function ensureAuth() {
+            const token = getToken();
+            const role = getRole();
+
+            if (!token) {
+                window.location.href = "login.html";
+                return;
+            }
+
+            // Hide user management features for non-admin users
+            if (role !== "admin") {
+                const userElements = document.querySelectorAll('[data-admin-only]');
+                userElements.forEach(el => el.style.display = 'none');
+            }
+
+            const allowedRoles = ["admin", "operations"];
+            if (!allowedRoles.includes(role)) {
+                // Refill dashboard only for admin/operations
+                window.location.href = "admin_dashboard.html";
+                return;
+            }
+
+            const userRoleElement = document.getElementById("user-role");
+            const mobileUserRoleElement = document.getElementById("mobile-user-role");
+            if (userRoleElement) userRoleElement.textContent = role || "user";
+            if (mobileUserRoleElement) mobileUserRoleElement.textContent = role || "user";
+        }
+
+        // ---------- HELPERS ----------
+        function showNotification(message, type = "info") {
+            const existing = document.querySelector(".notification");
+            if (existing) existing.remove();
+
+            const notification = document.createElement("div");
+            const bgColor =
+                type === "success"
+                    ? "bg-green-500"
+                    : type === "error"
+                        ? "bg-red-500"
+                        : "bg-blue-500";
+            const icon =
+                type === "success"
+                    ? "fa-check-circle"
+                    : type === "error"
+                        ? "fa-exclamation-circle"
+                        : "fa-info-circle";
+
+            notification.className =
+                `notification fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 transform transition-transform duration-300 translate-x-full`;
+            notification.innerHTML = `
+        <div class="flex items-center gap-2">
+          <i class="fa-solid ${icon}"></i>
+          <span>${message}</span>
+        </div>
+      `;
+
+            document.body.appendChild(notification);
+            setTimeout(() => notification.classList.remove("translate-x-full"), 100);
+
+            setTimeout(() => {
+                notification.classList.add("translate-x-full");
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById("sidebar");
+            const overlay = document.getElementById("overlay");
+            sidebar.classList.toggle("open");
+            overlay.classList.toggle("hidden");
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        function computeMissingForCubesat(c) {
+            const missing = {};
+            for (const [field, required] of Object.entries(REQUIRED_COUNTS)) {
+                const current = c[field] ?? 0;
+                if (current < required) {
+                    missing[field] = {
+                        field,
+                        label: LABELS_MAP[field] || field,
+                        required,
+                        current,
+                        missing: required - current,
+                    };
+                }
+            }
+            return missing;
+        }
+
+        function aggregateMissingAcrossCubesats(cubesats) {
+            const totals = {};
+            cubesats.forEach((c) => {
+                const missing = computeMissingForCubesat(c);
+                Object.values(missing).forEach((item) => {
+                    if (!totals[item.field]) {
+                        totals[item.field] = { ...item };
+                    } else {
+                        totals[item.field].missing += item.missing;
+                    }
+                });
+            });
+            return totals;
+        }
+
+        // ---- helpers for package requests ----
+        function buildItemsStringFromTotals(totals) {
+            const entries = Object.values(totals).sort((a, b) => b.missing - a.missing);
+            if (!entries.length) return "";
+            return entries.map(item => `${item.missing} ${item.label}`).join(", ");
+        }
+
+        function computeTotalItemsFromTotals(totals) {
+            return Object.values(totals).reduce((sum, item) => sum + item.missing, 0);
+        }
+
+        function buildUpdatePayload(c) {
+            // Must match CubesatCreate fields
+            return {
+                name: c.name,
+                status: c.status,
+                location: c.location,
+                delivered_date: c.delivered_date,
+                instructor_id: c.instructor_id,
+
+                structures: c.structures,
+                current_sensors: c.current_sensors,
+                temp_sensors: c.temp_sensors,
+                fram: c.fram,
+                sd_card: c.sd_card,
+                reaction_wheel: c.reaction_wheel,
+                mpu: c.mpu,
+                gps: c.gps,
+                motor_driver: c.motor_driver,
+                phillips_screwdriver: c.phillips_screwdriver,
+                screw_gauge_3d: c.screw_gauge_3d,
+                standoff_tool_3d: c.standoff_tool_3d,
+
+                cdhs_board: c.cdhs_board,
+                eps_board: c.eps_board,
+                adcs_board: c.adcs_board,
+                esp32_cam: c.esp32_cam,
+                esp32: c.esp32,
+                magnetorquer: c.magnetorquer,
+                buck_converter_module: c.buck_converter_module,
+                li_ion_battery: c.li_ion_battery,
+                pin_socket: c.pin_socket,
+
+                m3_screws: c.m3_screws,
+                m3_hex_nut: c.m3_hex_nut,
+                m3_9_6mm_brass_standoff: c.m3_9_6mm_brass_standoff,
+                m3_10mm_brass_standoff: c.m3_10mm_brass_standoff,
+                m3_10_6mm_brass_standoff: c.m3_10_6mm_brass_standoff,
+                m3_20_6mm_brass_standoff: c.m3_20_6mm_brass_standoff,
+            };
+        }
+
+        // ---------- LOAD & RENDER ----------
+        async function loadCubesatsForRefill() {
+            document.getElementById("loadingState").classList.remove("hidden");
+            document.getElementById("contentLoaded").classList.add("hidden");
+
+            try {
+                cubesatsData = await apiFetch("/cubesats/");
+                renderDashboard();
+                document.getElementById("loadingState").classList.add("hidden");
+                document.getElementById("contentLoaded").classList.remove("hidden");
+            } catch (err) {
+                console.error("Error loading cubesats:", err);
+                showNotification("Error loading cubesats data", "error");
+            }
+        }
+
+        async function loadMyPackageRequests() {
+            try {
+                myPackageRequests = await apiFetch("/package-requests/my");
+                renderMyPackageRequests();
+            } catch (err) {
+                console.error("Error loading my package requests:", err);
+                showNotification("Error loading your package requests", "error");
+            }
+        }
+
+        function renderDashboard() {
+            const total = cubesatsData.length;
+            const complete = cubesatsData.filter((c) => c.is_complete).length;
+            const incomplete = total - complete;
+
+            document.getElementById("statTotal").textContent = total;
+            document.getElementById("statComplete").textContent = complete;
+            document.getElementById("statIncomplete").textContent = incomplete;
+
+            // Fill cubesat select
+            const select = document.getElementById("cubesatSelect");
+            const currentSelectedId = selectedCubesat ? selectedCubesat.id : null;
+
+            select.innerHTML = '<option value="">Select a CubeSat…</option>';
+            cubesatsData.forEach((c) => {
+                const missing = Object.keys(computeMissingForCubesat(c)).length;
+                const opt = document.createElement("option");
+                opt.value = c.id;
+                opt.textContent = `${c.name} (ID ${c.id}) ${missing ? `– ${missing} missing` : ""}`;
+                select.appendChild(opt);
+            });
+
+            // keep previous selection if still exists
+            if (currentSelectedId) {
+                select.value = String(currentSelectedId);
+            }
+
+            // Charts
+            renderCharts();
+        }
+
+        function renderCharts() {
+            const ctxOverall = document.getElementById("overallChart").getContext("2d");
+            const ctxMissing = document.getElementById("missingItemsChart").getContext("2d");
+
+            const total = cubesatsData.length;
+            const complete = cubesatsData.filter((c) => c.is_complete).length;
+            const incomplete = total - complete;
+
+            const incompleteCubes = cubesatsData.filter((c) => !c.is_complete);
+            const totals = aggregateMissingAcrossCubesats(incompleteCubes);
+
+            const sortedTotals = Object.values(totals).sort((a, b) => b.missing - a.missing);
+            const labels = sortedTotals.map((x) => x.label);
+            const data = sortedTotals.map((x) => x.missing);
+
+            if (overallChart) overallChart.destroy();
+            if (missingItemsChart) missingItemsChart.destroy();
+
+            overallChart = new Chart(ctxOverall, {
+                type: "doughnut",
+                data: {
+                    labels: ["Complete", "Incomplete"],
+                    datasets: [
+                        {
+                            data: [complete, incomplete],
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: "bottom" },
+                    },
+                },
+            });
+
+            missingItemsChart = new Chart(ctxMissing, {
+                type: "bar",
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: "Total missing across incomplete kits",
+                            data,
+                        },
+                    ],
+                },
+                options: {
+                    indexAxis: "y",
+                    responsive: true,
+                    scales: {
+                        x: { beginAtZero: true },
+                    },
+                },
+            });
+        }
+
+        // ---------- INCOMPLETE SUMMARY MODAL (with selection) ----------
+        function openIncompleteSummaryModal() {
+            const modal = document.getElementById("incompleteSummaryModal");
+            const listEl = document.getElementById("incompleteSummaryCubesList");
+
+            const incompleteCubes = cubesatsData.filter((c) => !c.is_complete);
+            currentPackageTotals = null; // reset
+
+            if (!incompleteCubes.length) {
+                listEl.innerHTML =
+                    '<p class="p-3 text-sm text-gray-500">All CubeSat kits are complete 🎉</p>';
+                document.getElementById("incompleteSummaryTotals").innerHTML =
+                    '<p class="p-3 text-sm text-gray-500">No missing items to show.</p>';
+            } else {
+                // Build checkbox list (unchecked by default)
+                listEl.innerHTML = incompleteCubes
+                    .map((c) => {
+                        const missingCount = Object.keys(computeMissingForCubesat(c)).length;
+                        return `
+          <label class="flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+            <span class="flex flex-col">
+              <span class="font-medium text-gray-800">${c.name} (ID ${c.id})</span>
+              <span class="text-[11px] text-gray-500">
+                Location: ${c.location || "N/A"} • Missing items: ${missingCount}
+              </span>
+            </span>
+            <input type="checkbox"
+                   value="${c.id}"
+                   data-incomplete-cubesat-choice
+                   class="h-4 w-4 text-purple-600 border-gray-300 rounded">
+          </label>
+        `;
+                    })
+                    .join("");
+
+                // Attach change listener (event delegation)
+                listEl.onchange = () => {
+                    updateIncompleteSummaryTotals();
+                };
+
+                // Initially: nothing selected → show hint
+                document.getElementById("incompleteSummaryTotals").innerHTML =
+                    '<p class="p-3 text-sm text-gray-500">Select one or more CubeSats on the left to calculate totals.</p>';
+            }
+
+            modal.classList.remove("hidden");
+        }
+
+        function updateIncompleteSummaryTotals() {
+            const totalEl = document.getElementById("incompleteSummaryTotals");
+            const checked = Array.from(
+                document.querySelectorAll("input[data-incomplete-cubesat-choice]:checked")
+            );
+
+            if (!checked.length) {
+                currentPackageTotals = null;
+                totalEl.innerHTML =
+                    '<p class="p-3 text-sm text-gray-500">Select one or more CubeSats on the left to calculate totals.</p>';
+                return;
+            }
+
+            const selectedIds = checked.map((el) => parseInt(el.value));
+            const selectedCubes = cubesatsData.filter((c) =>
+                selectedIds.includes(c.id)
+            );
+
+            const totals = aggregateMissingAcrossCubesats(selectedCubes);
+            currentPackageTotals = totals;
+
+            if (!Object.keys(totals).length) {
+                totalEl.innerHTML =
+                    '<p class="p-3 text-sm text-emerald-600">Selected kits are complete 🎉</p>';
+                return;
+            }
+
+            const rows = Object.values(totals)
+                .sort((a, b) => b.missing - a.missing)
+                .map(
+                    (item) => `
+      <tr class="border-b border-gray-100">
+        <td class="px-3 py-2 text-sm text-gray-800">${item.label}</td>
+        <td class="px-3 py-2 text-sm text-gray-700">${item.missing}</td>
+      </tr>
+    `
+                )
+                .join("");
+
+            totalEl.innerHTML = `
+    <table class="min-w-full text-left text-sm">
+      <thead>
+        <tr class="bg-gray-50">
+          <th class="px-3 py-2 font-medium text-gray-700">Item</th>
+          <th class="px-3 py-2 font-medium text-gray-700">Total Missing</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+        }
+
+        function closeIncompleteSummaryModal() {
+            document.getElementById("incompleteSummaryModal").classList.add("hidden");
+        }
+
+        // ---------- PREFILL CONTACT FROM CUBESAT / INSTRUCTOR ----------
+        function prefillContactFromSelectedCubesats(selectedCubes) {
+            const contactNameInput = document.getElementById("packageContactName");
+            const contactPhoneInput = document.getElementById("packageContactPhone");
+            const locationInput = document.getElementById("packageLocation");
+
+            if (!selectedCubes || !selectedCubes.length) {
+                contactNameInput.value = "";
+                contactPhoneInput.value = "";
+                locationInput.value = "";
+                return;
+            }
+
+            // Unique values from selected cubesats
+            const names = [...new Set(
+                selectedCubes
+                    .map(c => c.instructor_name)
+                    .filter(Boolean)
+            )];
+
+            const phones = [...new Set(
+                selectedCubes
+                    .map(c => c.instructor_phone)
+                    .filter(Boolean)
+            )];
+
+            const locations = [...new Set(
+                selectedCubes
+                    .map(c => c.instructor_location || c.location)
+                    .filter(Boolean)
+            )];
+
+            contactNameInput.value = names.length === 1 ? names[0] : "";
+            contactPhoneInput.value = phones.length === 1 ? phones[0] : "";
+            locationInput.value = locations.length === 1
+                ? locations[0]
+                : (locations.length > 1 ? locations.join(" / ") : "");
+        }
+
+        // ---------- PACKAGE REQUEST MODAL (from incomplete summary selection) ----------
+        function openPackageRequestModalFromSelection() {
+            // Get which cubesats are selected
+            const checked = Array.from(
+                document.querySelectorAll("input[data-incomplete-cubesat-choice]:checked")
+            );
+
+            if (!checked.length) {
+                showNotification(
+                    "Select at least one kit with missing items before creating a package request",
+                    "error"
+                );
+                return;
+            }
+
+            const selectedIds = checked.map(el => parseInt(el.value));
+            const selectedCubes = cubesatsData.filter(c => selectedIds.includes(c.id));
+
+            // Ensure totals exist (in case user didn't click in right pane)
+            if (!currentPackageTotals || !Object.keys(currentPackageTotals).length) {
+                currentPackageTotals = aggregateMissingAcrossCubesats(selectedCubes);
+            }
+
+            if (!currentPackageTotals || !Object.keys(currentPackageTotals).length) {
+                showNotification("Selected kits do not have missing items", "error");
+                return;
+            }
+
+            const itemsStr = buildItemsStringFromTotals(currentPackageTotals);
+            const totalItems = computeTotalItemsFromTotals(currentPackageTotals);
+
+            document.getElementById("packageItems").value = itemsStr;
+            document.getElementById("packageTotalItems").value = totalItems;
+
+            // clear contact/location fields
+            document.getElementById("packageContactName").value = "";
+            document.getElementById("packageContactPhone").value = "";
+            document.getElementById("packageLocation").value = "";
+            document.getElementById("packageUrlLocation").value = "";
+
+            // Auto-fill from selected cubesats / instructors
+            prefillContactFromSelectedCubesats(selectedCubes);
+
+            document.getElementById("packageRequestModal").classList.remove("hidden");
+        }
+
+        function closePackageRequestModal() {
+            document.getElementById("packageRequestModal").classList.add("hidden");
+        }
+
+        async function submitPackageRequest() {
+            const contact_name = document.getElementById("packageContactName").value.trim();
+            const contact_phone = document.getElementById("packageContactPhone").value.trim();
+            const location = document.getElementById("packageLocation").value.trim();
+            const url_location = document.getElementById("packageUrlLocation").value.trim();
+            const items = document.getElementById("packageItems").value.trim();
+            const total_items = parseInt(
+                document.getElementById("packageTotalItems").value,
+                10
+            ) || 0;
+
+            if (!items || total_items <= 0) {
+                showNotification("No missing items to request", "error");
+                return;
+            }
+
+            try {
+                await apiFetch("/package-requests/", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        contact_name,
+                        contact_phone,
+                        location,
+                        url_location,
+                        items,
+                        total_items,
+                    }),
+                });
+
+                showNotification("Package request created and sent to COO", "success");
+                closePackageRequestModal();
+                closeIncompleteSummaryModal();
+                await loadMyPackageRequests(); // refresh "My Package Requests"
+            } catch (err) {
+                console.error("Error creating package request:", err);
+                showNotification("Failed to create package request", "error");
+            }
+        }
+
+        // ---------- MY PACKAGE REQUESTS SECTION ----------
+        function renderMyPackageRequests() {
+            const tbody = document.getElementById("myPackageRequestsBody");
+            const emptyState = document.getElementById("myPackageRequestsEmpty");
+
+            if (!myPackageRequests || !myPackageRequests.length) {
+                tbody.innerHTML = "";
+                emptyState.classList.remove("hidden");
+                return;
+            }
+
+            emptyState.classList.add("hidden");
+
+            const rows = myPackageRequests
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .map(req => {
+                    const statusBadgeClasses =
+                        req.status === "delivered"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : req.status === "on_way"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-gray-50 text-gray-700 border-gray-200";
+
+                    const canMarkReceived = req.status === "on_way";
+
+                    return `
+          <tr class="border-b border-gray-100 text-sm">
+            <td class="px-3 py-2 text-gray-800">
+              #${req.id}
+            </td>
+            <td class="px-3 py-2 text-gray-700">
+              ${req.items}
+            </td>
+            <td class="px-3 py-2 text-center text-gray-700">
+              ${req.total_items ?? "-"}
+            </td>
+            <td class="px-3 py-2 text-center">
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full border ${statusBadgeClasses} text-xs font-medium capitalize">
+                ${req.status}
+              </span>
+            </td>
+            <td class="px-3 py-2 text-center text-gray-500">
+              ${req.created_at ? new Date(req.created_at).toLocaleString() : "-"}
+            </td>
+            <td class="px-3 py-2 text-center text-gray-500">
+              ${req.sent_date ? new Date(req.sent_date).toLocaleDateString() : "-"}
+            </td>
+            <td class="px-3 py-2 text-center text-gray-500">
+              ${req.delivered_date ? new Date(req.delivered_date).toLocaleDateString() : "-"}
+            </td>
+            <td class="px-3 py-2 text-center">
+              ${canMarkReceived
+                            ? `<button
+                          class="inline-flex items-center px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium"
+                          onclick="markPackageRequestAsReceived(${req.id})">
+                          <i class="fa-solid fa-box-check mr-1"></i>
+                          Mark as received
+                       </button>`
+                            : `<span class="text-[11px] text-gray-400">—</span>`
+                        }
+            </td>
+          </tr>
+        `;
+                })
+                .join("");
+
+            tbody.innerHTML = rows;
+        }
+
+        async function markPackageRequestAsReceived(id) {
+            if (!confirm("Confirm that you received this package and all items are in?")) {
+                return;
+            }
+
+            try {
+                await apiFetch(`/package-requests/${id}/mark-received`, {
+                    method: "POST",
+                });
+
+                showNotification("Package marked as received", "success");
+                await loadMyPackageRequests();
+            } catch (err) {
+                console.error("Error marking package as received:", err);
+                showNotification("Failed to mark package as received", "error");
+            }
+        }
+
+        // expose for inline onclick
+        window.markPackageRequestAsReceived = markPackageRequestAsReceived;
+
+        // ---------- REFILL PANEL ----------
+        function renderSelectedCubesatMissing() {
+            const container = document.getElementById("cubesatMissingContainer");
+            if (!selectedCubesat) {
+                container.innerHTML =
+                    '<p class="text-sm text-gray-500">Select a CubeSat to view missing items.</p>';
+                return;
+            }
+
+            const missing = computeMissingForCubesat(selectedCubesat);
+            const entries = Object.values(missing);
+
+            if (!entries.length) {
+                container.innerHTML =
+                    '<p class="text-sm text-emerald-600 font-medium">This CubeSat kit is complete 🎉</p>';
+                return;
+            }
+
+            const rows = entries
+                .map(
+                    (item) => `
+        <tr class="border-b border-gray-100">
+          <td class="px-3 py-2 text-sm text-gray-800">
+            ${item.label}
+          </td>
+          <td class="px-3 py-2 text-center text-sm text-gray-700">
+            ${item.current}
+          </td>
+          <td class="px-3 py-2 text-center text-sm text-gray-700">
+            ${item.required}
+          </td>
+          <td class="px-3 py-2 text-center text-sm text-red-600 font-semibold">
+            ${item.missing}
+          </td>
+          <td class="px-3 py-2 text-center">
+            <input type="checkbox"
+              class="h-4 w-4 text-purple-600 border-gray-300 rounded"
+              data-refill-field="${item.field}">
+          </td>
+        </tr>
+      `
+                )
+                .join("");
+
+            container.innerHTML = `
+        <table class="min-w-full text-left text-sm">
+          <thead>
+            <tr class="bg-gray-50">
+              <th class="px-3 py-2 font-medium text-gray-700">Item</th>
+              <th class="px-3 py-2 font-medium text-gray-700 text-center">Current</th>
+              <th class="px-3 py-2 font-medium text-gray-700 text-center">Required</th>
+              <th class="px-3 py-2 font-medium text-gray-700 text-center">Missing</th>
+              <th class="px-3 py-2 font-medium text-gray-700 text-center">Refilled?</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+        }
+
+        async function saveRefillChanges() {
+            if (!selectedCubesat) {
+                showNotification("Please select a CubeSat first", "error");
+                return;
+            }
+
+            const checkboxes = document.querySelectorAll("[data-refill-field]");
+            const fieldsToRefill = [];
+            checkboxes.forEach((cb) => {
+                if (cb.checked) fieldsToRefill.push(cb.getAttribute("data-refill-field"));
+            });
+
+            if (!fieldsToRefill.length) {
+                showNotification("Select at least one item to refill", "error");
+                return;
+            }
+
+            // Build payload from current cubesat, then bump counts to required
+            const payloadSource = { ...selectedCubesat };
+            fieldsToRefill.forEach((field) => {
+                const required = REQUIRED_COUNTS[field] || 0;
+                payloadSource[field] = required;
+            });
+
+            const payload = buildUpdatePayload(payloadSource);
+
+            const btn = document.getElementById("saveRefillBtn");
+            const original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML =
+                '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Saving...';
+
+            try {
+                const updated = await apiFetch(`/cubesats/${selectedCubesat.id}`, {
+                    method: "PUT",
+                    body: JSON.stringify(payload),
+                });
+
+                // Update local data
+                const idx = cubesatsData.findIndex((c) => c.id === updated.id);
+                if (idx !== -1) cubesatsData[idx] = updated;
+                selectedCubesat = updated;
+
+                renderDashboard();
+                renderSelectedCubesatMissing();
+                showNotification("Refill saved and cubesat updated", "success");
+            } catch (err) {
+                console.error("Error saving refill:", err);
+                showNotification("Error saving refill changes", "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        }
+
+        function onCubesatSelectChange(e) {
+            const idStr = e.target.value;
+
+            if (!idStr) {
+                // No selection
+                selectedCubesat = null;
+                renderSelectedCubesatMissing();
+                return;
+            }
+
+            const id = parseInt(idStr);
+            selectedCubesat = cubesatsData.find((c) => c.id === id) || null;
+            renderSelectedCubesatMissing();
+        }
+
+        // ---------- INIT ----------
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadCubesatsForRefill();
+            loadMyPackageRequests();
+
+            document
+                .getElementById("cubesatSelect")
+                .addEventListener("change", onCubesatSelectChange);
+            document
+                .getElementById("saveRefillBtn")
+                .addEventListener("click", saveRefillChanges);
+
+            document
+                .getElementById("incompleteCard")
+                .addEventListener("click", openIncompleteSummaryModal);
+            document
+                .getElementById("closeIncompleteModalBtn")
+                .addEventListener("click", closeIncompleteSummaryModal);
+
+            const modalOverlay = document.getElementById("incompleteSummaryModal");
+            modalOverlay.addEventListener("click", (e) => {
+                if (e.target === modalOverlay) closeIncompleteSummaryModal();
+            });
+
+            const pkgOverlay = document.getElementById("packageRequestModal");
+            pkgOverlay.addEventListener("click", (e) => {
+                if (e.target === pkgOverlay) closePackageRequestModal();
+            });
+
+            document
+                .getElementById("createPackageRequestBtn")
+                .addEventListener("click", openPackageRequestModalFromSelection);
+            document
+                .getElementById("submitPackageRequestBtn")
+                .addEventListener("click", submitPackageRequest);
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p class="text-xs text-gray-500">
+                        Role: <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nav -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="cubesats_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-cube w-5"></i>
+                <span>Cubesats</span>
+            </a>
+            <a href="components_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-microchip w-5"></i>
+                <span>Components</span>
+            </a>
+            <a href="admin_session_logs.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-file w-5"></i>
+                <span>CubeSat Logs</span>
+            </a>
+            <a href="instructors_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-user-tie w-5"></i>
+                <span>Instructors</span>
+            </a>
+            <a href="workshops_list.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-chalkboard-user w-5"></i>
+                <span>Workshops</span>
+            </a>
+            <a href="receipt_generate.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-receipt w-5"></i>
+                <span>Generate Receipt</span>
+            </a>
+
+            <!-- Refill Dashboard item -->
+            <a href="cubesats_refill.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-warehouse w-5"></i>
+                <span>Refill Dashboard</span>
+            </a>
+            <a href="reports_admin.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-flag w-5"></i>
+                <span>Reports</span>
+            </a>
+
+            <a href="users.html" data-admin-only
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-users-gear w-5"></i>
+                <span>Users</span>
+            </a>
+        </nav>
+
+        <!-- Logout -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main content -->
+    <main class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Refill Dashboard</h1>
+                    <p class="text-sm text-gray-500 mt-1">
+                        See missing parts across all CubeSat kits and update refills quickly.
+                    </p>
+                </div>
+                <div class="hidden lg:flex items-center gap-4">
+                    <span class="text-sm text-gray-500">Role:</span>
+                    <span id="user-role"
+                        class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Loading -->
+        <div id="loadingState" class="p-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 flex flex-col items-center">
+                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-600 mb-3">
+                </div>
+                <p class="text-sm text-gray-500">Loading cubesats inventory...</p>
+            </div>
+        </div>
+
+        <!-- Loaded content -->
+        <div id="contentLoaded" class="hidden flex-1 p-6 space-y-6">
+            <!-- Stats cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">Total CubeSats</p>
+                        <p id="statTotal" class="mt-1 text-2xl font-bold text-gray-900">0</p>
+                    </div>
+                    <div class="p-3 rounded-full bg-purple-50 text-purple-700">
+                        <i class="fa-solid fa-cube"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">Complete Kits</p>
+                        <p id="statComplete" class="mt-1 text-2xl font-bold text-emerald-600">0</p>
+                    </div>
+                    <div class="p-3 rounded-full bg-emerald-50 text-emerald-700">
+                        <i class="fa-solid fa-check"></i>
+                    </div>
+                </div>
+
+                <button id="incompleteCard"
+                    class="bg-white border border-amber-200 rounded-xl p-4 flex items-center justify-between text-left hover-bg-amber-50 hover:bg-amber-50 transition">
+                    <div>
+                        <p class="text-xs font-semibold text-amber-700 uppercase flex items-center gap-1">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            Incomplete Kits
+                        </p>
+                        <p id="statIncomplete" class="mt-1 text-2xl font-bold text-amber-700">0</p>
+                        <p class="text-[11px] text-amber-700 mt-1">
+                            Click to select kits and calculate their total missing items.
+                        </p>
+                    </div>
+                    <div class="p-3 rounded-full bg-amber-50 text-amber-700">
+                        <i class="fa-solid fa-toolbox"></i>
+                    </div>
+                </button>
+            </div>
+
+            <!-- Charts + refill panel -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Charts -->
+                <div class="lg:col-span-2 space-y-4">
+                    <div class="bg-white border border-gray-200 rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h2 class="text-sm font-semibold text-gray-800">Kit Completion Overview</h2>
+                        </div>
+                        <div class="h-64">
+                            <canvas id="overallChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h2 class="text-sm font-semibold text-gray-800">
+                                Most Missing Items (across incomplete kits)
+                            </h2>
+                            <p class="text-[11px] text-gray-500">
+                                Helps you prioritize what to refill.
+                            </p>
+                        </div>
+                        <div class="h-72">
+                            <canvas id="missingItemsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Refill panel -->
+                <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col">
+                    <h2 class="text-sm font-semibold text-gray-800 mb-3">Refill a specific CubeSat</h2>
+
+                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                        Select CubeSat
+                    </label>
+                    <select id="cubesatSelect"
+                        class="mb-3 w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500 bg-white">
+                        <option value="">Loading...</option>
+                    </select>
+
+                    <div id="cubesatMissingContainer"
+                        class="flex-1 overflow-auto border border-gray-100 rounded-lg p-2">
+                        <p class="text-sm text-gray-500">
+                            Select a CubeSat to view missing items.
+                        </p>
+                    </div>
+
+                    <button id="saveRefillBtn"
+                        class="mt-3 inline-flex items-center justify-center px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium">
+                        <i class="fa-solid fa-floppy-disk mr-2"></i>
+                        Save Refill Updates
+                    </button>
+                </div>
+            </div>
+
+            <!-- My Package Requests section -->
+            <section class="mt-6">
+                <div class="bg-white border border-gray-200 rounded-xl p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h2 class="text-sm font-semibold text-gray-800">
+                                My Package Requests
+                            </h2>
+                            <p class="text-[11px] text-gray-500 mt-1">
+                                Requests you sent to the COO for missing items. Mark them as received when the package
+                                arrives.
+                            </p>
+                        </div>
+                        <button onclick="loadMyPackageRequests()"
+                            class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50">
+                            <i class="fa-solid fa-rotate mr-1"></i>
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div class="border border-gray-100 rounded-lg overflow-hidden">
+                        <table class="min-w-full text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-700 text-xs">ID</th>
+                                    <th class="px-3 py-2 text-left font-medium text-gray-700 text-xs w-1/2">
+                                        Items
+                                    </th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-700 text-xs">
+                                        Total
+                                    </th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-700 text-xs">
+                                        Status
+                                    </th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-700 text-xs">
+                                        Created
+                                    </th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-700 text-xs">
+                                        Sent Date
+                                    </th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-700 text-xs">
+                                        Delivered
+                                    </th>
+                                    <th class="px-3 py-2 text-center font-medium text-gray-700 text-xs">
+                                        Action
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="myPackageRequestsBody"></tbody>
+                        </table>
+                        <div id="myPackageRequestsEmpty" class="p-4 text-center text-xs text-gray-500">
+                            You don't have any package requests yet. Select incomplete kits → create a package request
+                            to see them here.
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Incomplete summary modal -->
+    <div id="incompleteSummaryModal"
+        class="hidden fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+                <h3 class="text-sm font-semibold text-gray-900">
+                    Total Missing Items (for selected kits)
+                </h3>
+                <button id="closeIncompleteModalBtn" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-4 max-h-[70vh] overflow-y-auto">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <!-- Left: list of incomplete cubesats -->
+                    <div>
+                        <h4 class="text-xs font-semibold text-gray-600 uppercase mb-2">
+                            Choose CubeSats to include
+                        </h4>
+                        <div id="incompleteSummaryCubesList"
+                            class="border border-gray-200 rounded-lg max-h-72 overflow-y-auto divide-y divide-gray-100">
+                            <!-- filled via JS -->
+                        </div>
+                        <p class="mt-2 text-[11px] text-gray-500">
+                            Tip: you can select only the kits you plan to refill in the next batch.
+                        </p>
+                    </div>
+
+                    <!-- Right: totals for selected kits -->
+                    <div>
+                        <h4 class="text-xs font-semibold text-gray-600 uppercase mb-2">
+                            Total missing items for selected kits
+                        </h4>
+                        <div id="incompleteSummaryTotals"
+                            class="border border-gray-200 rounded-lg max-h-72 overflow-y-auto p-2">
+                            <!-- filled via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                class="px-5 py-3 border-t border-gray-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <p class="text-[11px] text-gray-500">
+                    You can create a package request to the COO based on the selected kits and their
+                    missing items.
+                </p>
+                <div class="flex gap-2 justify-end">
+                    <button id="createPackageRequestBtn"
+                        class="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 inline-flex items-center gap-2">
+                        <i class="fa-solid fa-box-open text-xs"></i>
+                        Create Package Request
+                    </button>
+                    <button onclick="closeIncompleteSummaryModal()"
+                        class="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Package Request modal -->
+    <div id="packageRequestModal"
+        class="hidden fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+                <h3 class="text-sm font-semibold text-gray-900">
+                    Create Package Request for COO
+                </h3>
+                <button class="text-gray-400 hover:text-gray-600 transition-colors"
+                    onclick="closePackageRequestModal()">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">
+                            Contact Name
+                        </label>
+                        <input id="packageContactName" type="text"
+                            class="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-purple-500 focus:border-purple-500"
+                            placeholder="Who will receive the package?" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">
+                            Contact Phone
+                        </label>
+                        <input id="packageContactPhone" type="text"
+                            class="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-purple-500 focus:border-purple-500"
+                            placeholder="+971..." />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                        Location (School / City)
+                    </label>
+                    <input id="packageLocation" type="text"
+                        class="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-purple-500 focus:border-purple-500"
+                        placeholder="e.g. Dubai – Taaleem school" />
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                        Map / URL Location (optional)
+                    </label>
+                    <input id="packageUrlLocation" type="text"
+                        class="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-purple-500 focus:border-purple-500"
+                        placeholder="Google Maps link" />
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                        Items Requested
+                    </label>
+                    <textarea id="packageItems" rows="3"
+                        class="w-full px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-purple-500 focus:border-purple-500"></textarea>
+                    <p class="mt-1 text-[11px] text-gray-500">
+                        Auto-filled from selected kits (you can adjust the text if needed).
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                        Total items
+                    </label>
+                    <input id="packageTotalItems" type="number" min="0"
+                        class="w-32 px-3 py-2 rounded-md border border-gray-300 text-sm focus:ring-purple-500 focus:border-purple-500" />
+                </div>
+            </div>
+
+            <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+                <button onclick="closePackageRequestModal()"
+                    class="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button id="submitPackageRequestBtn"
+                    class="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 inline-flex items-center gap-2">
+                    <i class="fa-solid fa-paper-plane text-xs"></i>
+                    Send Request to COO
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
+    </div>
+</body>
+
+</html>

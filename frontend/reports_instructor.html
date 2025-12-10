@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Reports – Instructor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+            --sp-light: #d7d2cb;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f3f4f6;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5f5;
+            border-radius: 999px;
+        }
+    </style>
+
+    <script defer>
+        let reports = [];
+        let selectedReport = null;       // currently opened report
+        let reportDetailsCache = {};     // cache of { [id]: ReportWithMessages }
+
+        function ensureInstructor() {
+            const role = getRole();
+            if (role !== "instructor") {
+                window.location.href = "login.html";
+                return;
+            }
+
+            const roleSpan = document.getElementById("user-role");
+            const mobileRoleSpan = document.getElementById("mobile-user-role");
+            if (roleSpan) roleSpan.textContent = role;
+            if (mobileRoleSpan) mobileRoleSpan.textContent = role;
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById("sidebar");
+            const overlay = document.getElementById("overlay");
+            sidebar.classList.toggle("open");
+            overlay.classList.toggle("hidden");
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        function showNotification(message, type = "info") {
+            const existing = document.querySelector(".notification-toast");
+            if (existing) existing.remove();
+
+            const div = document.createElement("div");
+            const bg =
+                type === "success"
+                    ? "bg-green-600"
+                    : type === "error"
+                        ? "bg-red-600"
+                        : "bg-purple-600";
+
+            div.className =
+                "notification-toast fixed top-4 right-4 " +
+                bg +
+                " text-white px-4 py-2 rounded-lg shadow-lg text-sm z-50 transform translate-x-full transition-transform duration-300";
+            div.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid ${type === "success"
+                    ? "fa-check-circle"
+                    : type === "error"
+                        ? "fa-exclamation-circle"
+                        : "fa-info-circle"
+                }"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            document.body.appendChild(div);
+
+            setTimeout(() => {
+                div.classList.remove("translate-x-full");
+            }, 50);
+
+            setTimeout(() => {
+                div.classList.add("translate-x-full");
+                setTimeout(() => div.remove(), 300);
+            }, 3000);
+        }
+
+        // --------- LOAD & RENDER LIST ---------
+
+        async function loadReports() {
+            const listContainer = document.getElementById("reportsList");
+            const emptyState = document.getElementById("emptyListState");
+            listContainer.innerHTML = "";
+            emptyState.textContent = "Loading reports...";
+
+            try {
+                // Backend already filters by instructor_id for instructor role
+                reports = await apiFetch("/reports/");
+                if (!Array.isArray(reports) || !reports.length) {
+                    emptyState.textContent = "You don't have any reports yet.";
+                    return;
+                }
+                emptyState.textContent = "";
+                renderReportList();
+            } catch (err) {
+                console.error(err);
+                emptyState.innerHTML =
+                    '<span class="text-red-500 text-sm">Error loading reports.</span>';
+            }
+        }
+
+        function renderReportList() {
+            const listContainer = document.getElementById("reportsList");
+            const emptyState = document.getElementById("emptyListState");
+            listContainer.innerHTML = "";
+
+            if (!reports.length) {
+                emptyState.textContent = "You don't have any reports yet.";
+                return;
+            } else {
+                emptyState.textContent = "";
+            }
+
+            reports.forEach((r) => {
+                const isSelected = selectedReport && selectedReport.id === r.id;
+
+                const badge =
+                    r.status === "open"
+                        ? "bg-red-100 text-red-700 border-red-200"
+                        : r.status === "in_progress"
+                            ? "bg-amber-100 text-amber-700 border-amber-200"
+                            : "bg-emerald-100 text-emerald-700 border-emerald-200";
+
+                const div = document.createElement("button");
+                div.type = "button";
+                div.className =
+                    "w-full text-left mb-2 px-3 py-3 rounded-lg border transition-all flex flex-col gap-1 " +
+                    (isSelected
+                        ? "border-purple-500 bg-purple-50"
+                        : "border-gray-200 bg-white hover:bg-gray-50");
+
+                div.onclick = () => onSelectReport(r.id);
+
+                div.innerHTML = `
+                    <div class="flex items-center justify-between gap-2">
+                        <h3 class="text-sm font-semibold text-gray-900 line-clamp-1">
+                            ${r.title || "Untitled report"}
+                        </h3>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badge}">
+                            ${r.status}
+                        </span>
+                    </div>
+                    <p class="text-[11px] text-gray-500">
+                        Created: ${new Date(r.created_at).toLocaleString()}
+                    </p>
+                    ${r.cubesat_id ? `
+                        <p class="text-[11px] text-gray-500 flex items-center gap-1">
+                            <i class="fa-solid fa-cube text-gray-400"></i>
+                            Linked CubeSat ID: ${r.cubesat_id}
+                        </p>
+                    ` : ""}
+                `;
+
+                listContainer.appendChild(div);
+            });
+        }
+
+        async function onSelectReport(reportId) {
+            try {
+                let reportDetail = reportDetailsCache[reportId];
+                if (!reportDetail) {
+                    reportDetail = await apiFetch(`/reports/${reportId}`);
+                    reportDetailsCache[reportId] = reportDetail;
+                }
+                selectedReport = reportDetail;
+                renderReportList();
+                renderConversation();
+            } catch (err) {
+                console.error(err);
+                showNotification("Error loading report details", "error");
+            }
+        }
+
+        // --------- RENDER CONVERSATION ---------
+
+        function renderConversation() {
+            const headerTitle = document.getElementById("conversationTitle");
+            const headerMeta = document.getElementById("conversationMeta");
+            const messagesContainer = document.getElementById("messagesContainer");
+
+            if (!selectedReport) {
+                headerTitle.textContent = "Select a report to view the conversation";
+                headerMeta.innerHTML = "";
+                messagesContainer.innerHTML =
+                    '<p class="text-sm text-gray-500">Choose a report from the left panel to see messages.</p>';
+                return;
+            }
+
+            headerTitle.textContent = selectedReport.title || "Report";
+            headerMeta.innerHTML = `
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold
+                    ${selectedReport.status === "open"
+                    ? "bg-red-100 text-red-700 border border-red-200"
+                    : selectedReport.status === "in_progress"
+                        ? "bg-amber-100 text-amber-700 border border-amber-200"
+                        : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                }">
+                    ${selectedReport.status}
+                </span>
+                ${selectedReport.cubesat_id ? `
+                    <span class="inline-flex items-center gap-1 text-[11px] text-gray-500 ml-2">
+                        <i class="fa-solid fa-cube text-gray-400"></i>
+                        CubeSat ID: ${selectedReport.cubesat_id}
+                    </span>
+                ` : ""}
+            `;
+
+            if (!selectedReport.messages || !selectedReport.messages.length) {
+                messagesContainer.innerHTML =
+                    '<p class="text-sm text-gray-500">No messages yet in this report.</p>';
+                return;
+            }
+
+            messagesContainer.innerHTML = "";
+
+            selectedReport.messages.forEach((m) => {
+                const isInstructor = m.sender_role === "instructor";
+
+                const wrapper = document.createElement("div");
+                wrapper.className = "flex mb-3 " + (isInstructor ? "justify-end" : "justify-start");
+
+                const bubble = document.createElement("div");
+                bubble.className =
+                    "max-w-xs md:max-w-md px-3 py-2 rounded-lg text-sm shadow border " +
+                    (isInstructor
+                        ? "bg-purple-600 text-white border-purple-700"
+                        : "bg-white text-gray-900 border-gray-200");
+
+                bubble.innerHTML = `
+                    <p class="whitespace-pre-line break-words">${m.message}</p>
+                    <p class="mt-1 text-[10px] ${isInstructor ? "text-purple-100" : "text-gray-400"}">
+                        ${m.sender_role === "instructor" ? "You" : "Admin/Operations"} •
+                        ${new Date(m.created_at).toLocaleString()}
+                    </p>
+                `;
+
+                wrapper.appendChild(bubble);
+                messagesContainer.appendChild(wrapper);
+            });
+
+            // scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // --------- CREATE NEW REPORT ---------
+
+        async function submitNewReport() {
+            const titleInput = document.getElementById("newReportTitle");
+            const cubesatInput = document.getElementById("newReportCubesatId");
+            const messageInput = document.getElementById("newReportMessage");
+
+            const title = titleInput.value.trim();
+            const message = messageInput.value.trim();
+            const cubesatIdRaw = cubesatInput.value.trim();
+
+            if (!title || !message) {
+                showNotification("Please enter a title and message", "error");
+                return;
+            }
+
+            let cubesat_id = null;
+            if (cubesatIdRaw) {
+                const parsed = parseInt(cubesatIdRaw, 10);
+                if (!isNaN(parsed)) cubesat_id = parsed;
+            }
+
+            try {
+                const newReport = await apiFetch("/reports/", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        title,
+                        message,
+                        cubesat_id,
+                    }),
+                });
+
+                showNotification("Report submitted successfully", "success");
+
+                // clear form
+                titleInput.value = "";
+                cubesatInput.value = "";
+                messageInput.value = "";
+
+                // reload list & select the new report
+                await loadReports();
+                if (newReport && newReport.id) {
+                    await onSelectReport(newReport.id);
+                }
+            } catch (err) {
+                console.error(err);
+                showNotification("Failed to submit report", "error");
+            }
+        }
+
+        // --------- SEND REPLY IN SELECTED REPORT ---------
+
+        async function sendReply() {
+            if (!selectedReport) {
+                showNotification("Select a report first", "error");
+                return;
+            }
+
+            const replyInput = document.getElementById("replyMessage");
+            const message = replyInput.value.trim();
+            if (!message) return;
+
+            try {
+                const msg = await apiFetch(`/reports/${selectedReport.id}/messages`, {
+                    method: "POST",
+                    body: JSON.stringify({ message }),
+                });
+
+                replyInput.value = "";
+
+                // Update local cache: push message
+                if (!selectedReport.messages) selectedReport.messages = [];
+                selectedReport.messages.push(msg);
+
+                // Also update cache storage
+                reportDetailsCache[selectedReport.id] = selectedReport;
+
+                renderConversation();
+                showNotification("Message sent", "success");
+            } catch (err) {
+                console.error(err);
+                showNotification("Failed to send message", "error");
+            }
+        }
+
+        // --------- WEBSOCKET ---------
+
+        function setupWebSocket() {
+            const userId = getUserId();
+            if (!userId) return;
+
+            const wsUrl = `${location.origin.replace("http", "ws")}/ws/${userId}`;
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log("Reports WebSocket connected");
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    console.log("WS message:", msg);
+
+                    // We only care about messages related to reports for instructor
+                    if (msg.type === "report_message") {
+                        // If this is the currently open report, we can append +
+                        // re-fetch to keep status in sync.
+                        showNotification("You received a new message on a report");
+
+                        // Simple approach: reload reports list.
+                        loadReports();
+
+                        // If the message belongs to the currently open report, re-fetch it.
+                        if (selectedReport && selectedReport.id === msg.report_id) {
+                            onSelectReport(msg.report_id);
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error processing WS message:", err);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log("Reports WebSocket closed");
+            };
+
+            ws.onerror = (e) => {
+                console.error("Reports WebSocket error:", e);
+            };
+        }
+
+        // --------- INIT ---------
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureInstructor();
+            loadReports();
+            setupWebSocket();
+
+            // Close sidebar overlay when clicking outside (mobile)
+            const overlay = document.getElementById("overlay");
+            if (overlay) {
+                overlay.addEventListener("click", toggleSidebar);
+            }
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="SpacePoint Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-900">Instructor</p>
+                    <p class="text-xs text-gray-500">
+                        Role:
+                        <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nav -->
+        <nav class="flex-1 p-4 space-y-2">
+            <!-- Adjust these links to match your actual instructor pages -->
+            <a href="instructor_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i><span>Dashboard</span>
+            </a>
+            <a href="cubesat_check.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-clipboard-check w-5"></i><span>CubeSat Check</span>
+            </a>
+            <a href="notifications.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-bell w-5"></i><span>Notifications</span>
+            </a>
+
+            <a href="reports_instructor.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-flag w-5"></i>
+                <span>Reports</span>
+            </a>
+        </nav>
+
+        <!-- Logout -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Reports & Support</h1>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Submit issues about CubeSat kits or workshops and chat with the operations/admin team.
+                    </p>
+                </div>
+                <div class="hidden lg:flex items-center gap-3">
+                    <span class="text-sm text-gray-500">Role:</span>
+                    <span id="user-role"
+                        class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content -->
+        <section class="flex-1 p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- LEFT: New report + list -->
+                <div class="lg:col-span-1 flex flex-col gap-4">
+                    <!-- New Report Form -->
+                    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+                        <h2 class="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                            <i class="fa-solid fa-paper-plane text-purple-600"></i>
+                            Submit a new report
+                        </h2>
+
+                        <label class="block mb-2 text-xs font-medium text-gray-600">
+                            Title
+                        </label>
+                        <input id="newReportTitle" type="text"
+                            class="w-full mb-3 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500"
+                            placeholder="Short summary, e.g. 'Missing MPU in Kit #3'" />
+
+                        <label class="block mb-2 text-xs font-medium text-gray-600">
+                            CubeSat ID (optional)
+                        </label>
+                        <input id="newReportCubesatId" type="number"
+                            class="w-full mb-3 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500"
+                            placeholder="e.g. 12" />
+
+                        <label class="block mb-2 text-xs font-medium text-gray-600">
+                            Message / description
+                        </label>
+                        <textarea id="newReportMessage"
+                            class="w-full mb-3 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500 h-24"
+                            placeholder="Describe the issue, missing items, or feedback..."></textarea>
+
+                        <button onclick="submitNewReport()"
+                            class="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium w-full">
+                            <i class="fa-solid fa-paper-plane mr-2"></i>
+                            Submit Report
+                        </button>
+                    </div>
+
+                    <!-- Reports List -->
+                    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-4 flex flex-col h-[340px]">
+                        <div class="flex items-center justify-between mb-2">
+                            <h2 class="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                <i class="fa-solid fa-list-ul text-gray-400"></i>
+                                Your reports
+                            </h2>
+                        </div>
+
+                        <div id="reportsList" class="flex-1 overflow-y-auto custom-scroll pr-1 text-sm">
+                            <!-- Filled by JS -->
+                        </div>
+                        <p id="emptyListState" class="text-xs text-gray-400 mt-2"></p>
+                    </div>
+                </div>
+
+                <!-- RIGHT: Conversation -->
+                <div class="lg:col-span-2 flex flex-col bg-white border border-gray-200 rounded-xl shadow-sm">
+                    <!-- Conversation header -->
+                    <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                        <div>
+                            <h2 id="conversationTitle" class="text-sm font-semibold text-gray-900">
+                                Select a report to view the conversation
+                            </h2>
+                            <div id="conversationMeta" class="mt-1 text-xs text-gray-500 flex items-center flex-wrap">
+                                <!-- status + cubesat id -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Messages -->
+                    <div id="messagesContainer"
+                        class="flex-1 px-4 py-3 overflow-y-auto custom-scroll bg-gray-50 text-sm">
+                        <p class="text-sm text-gray-500">
+                            Choose a report from the left panel to see messages.
+                        </p>
+                    </div>
+
+                    <!-- Reply box -->
+                    <div class="border-t border-gray-200 px-4 py-3 bg-gray-50">
+                        <div class="flex items-end gap-3">
+                            <textarea id="replyMessage"
+                                class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500 h-16"
+                                placeholder="Write a reply to the admin/operations team..."></textarea>
+                            <button onclick="sendReply()"
+                                class="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium">
+                                <i class="fa-solid fa-paper-plane mr-2"></i>
+                                Send
+                            </button>
+                        </div>
+                        <p class="mt-1 text-[11px] text-gray-400">
+                            Replies are visible to the operations/admin team handling your report.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden"></div>
+</body>
+
+</html>

@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>COO – Package Requests</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="js/api.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+        }
+
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f3f4f6;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5f5;
+            border-radius: 999px;
+        }
+    </style>
+
+    <script defer>
+        let requests = [];
+        let selectedRequest = null;
+
+        // ---------- AUTH ----------
+        function ensureAuth() {
+            const role = getRole();
+            if (!role || role !== "coo") {
+                window.location.href = "login.html";
+                return;
+            }
+
+            // Read directly from sessionStorage (no need for getFullName helper)
+            const fullName = getFullName();
+
+            const roleSpan = document.getElementById("user-role");
+            const mobileRoleSpan = document.getElementById("mobile-user-role");
+            const nameSpan = document.getElementById("sidebar-full-name");
+
+            if (roleSpan) roleSpan.textContent = role;
+            if (mobileRoleSpan) mobileRoleSpan.textContent = role;
+            if (nameSpan) nameSpan.textContent = fullName;
+        }
+
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById("sidebar");
+            const overlay = document.getElementById("overlay");
+            sidebar.classList.toggle("open");
+            overlay.classList.toggle("hidden");
+        }
+
+        function logout() {
+            clearAuth();
+            window.location.href = "login.html";
+        }
+
+        function showNotification(message, type = "info") {
+            const existing = document.querySelector(".notification-toast");
+            if (existing) existing.remove();
+
+            const div = document.createElement("div");
+            const bg =
+                type === "success"
+                    ? "bg-green-600"
+                    : type === "error"
+                        ? "bg-red-600"
+                        : "bg-purple-600";
+
+            div.className =
+                "notification-toast fixed top-4 right-4 " +
+                bg +
+                " text-white px-4 py-2 rounded-lg shadow-lg text-sm z-50 transform translate-x-full transition-transform duration-300";
+            div.innerHTML = `
+        <div class="flex items-center gap-2">
+          <i class="fa-solid ${type === "success"
+                    ? "fa-check-circle"
+                    : type === "error"
+                        ? "fa-exclamation-circle"
+                        : "fa-info-circle"
+                }"></i>
+          <span>${message}</span>
+        </div>
+      `;
+            document.body.appendChild(div);
+
+            setTimeout(() => {
+                div.classList.remove("translate-x-full");
+            }, 50);
+
+            setTimeout(() => {
+                div.classList.add("translate-x-full");
+                setTimeout(() => div.remove(), 300);
+            }, 3000);
+        }
+
+        // ---------- HELPERS ----------
+        function computeStats() {
+            let pending = 0;
+            let onWay = 0;
+            let delivered = 0;
+            requests.forEach(r => {
+                if (r.status === "pending") pending++;
+                else if (r.status === "on_way") onWay++;
+                else if (r.status === "delivered") delivered++;
+            });
+            return { pending, onWay, delivered };
+        }
+
+        function updateStatsUI() {
+            const { pending, onWay, delivered } = computeStats();
+            const p = document.getElementById("statPending");
+            const o = document.getElementById("statOnWay");
+            const d = document.getElementById("statDelivered");
+            if (p) p.textContent = pending;
+            if (o) o.textContent = onWay;
+            if (d) d.textContent = delivered;
+        }
+
+        function buildChecklistItems(itemsStr) {
+            if (!itemsStr) return [];
+            return itemsStr
+                .split(",")
+                .map(s => s.trim())
+                .filter(Boolean);
+        }
+
+        function updateOnWayButtonState() {
+            const btn = document.getElementById("markOnWayBtn");
+            const statusInfo = document.getElementById("statusInfo");
+
+            if (!selectedRequest) {
+                btn.disabled = true;
+                statusInfo.textContent =
+                    "Select a request, review the items and tick them before sending.";
+                return;
+            }
+
+            if (selectedRequest.status !== "pending") {
+                btn.disabled = true;
+                statusInfo.textContent =
+                    "This request is already processed.";
+                return;
+            }
+
+            const checkboxes = Array.from(
+                document.querySelectorAll("[data-checklist-item]")
+            );
+
+            if (!checkboxes.length) {
+                // No checklist generated – fallback to simple rule
+                btn.disabled = false;
+                statusInfo.textContent =
+                    "You can mark as 'On way' when you send the package.";
+                return;
+            }
+
+            const allChecked = checkboxes.every(cb => cb.checked);
+
+            btn.disabled = !allChecked;
+            statusInfo.textContent = allChecked
+                ? "All items are checked. You can now mark this package as 'On way'."
+                : "Tick all items once they are prepared before marking as 'On way'.";
+        }
+
+        // ---------- LOAD & RENDER LIST ----------
+        async function loadRequests() {
+            const listContainer = document.getElementById("requestsList");
+            const emptyState = document.getElementById("emptyListState");
+            listContainer.innerHTML = "";
+            emptyState.textContent = "Loading package requests...";
+
+            try {
+                requests = await apiFetch("/package-requests/");
+                updateStatsUI();
+
+                if (!Array.isArray(requests) || !requests.length) {
+                    emptyState.textContent = "No package requests yet.";
+                    return;
+                }
+                emptyState.textContent = "";
+                renderRequestList();
+            } catch (err) {
+                console.error(err);
+                emptyState.innerHTML =
+                    '<span class="text-red-500 text-sm">Error loading package requests.</span>';
+            }
+        }
+
+        function renderRequestList() {
+            const listContainer = document.getElementById("requestsList");
+            const emptyState = document.getElementById("emptyListState");
+            listContainer.innerHTML = "";
+
+            if (!requests.length) {
+                emptyState.textContent = "No package requests yet.";
+                return;
+            } else {
+                emptyState.textContent = "";
+            }
+
+            requests.forEach((r) => {
+                const isSelected = selectedRequest && selectedRequest.id === r.id;
+
+                let badgeClasses = "";
+                if (r.status === "pending") {
+                    badgeClasses = "bg-red-100 text-red-700 border-red-200";
+                } else if (r.status === "on_way") {
+                    badgeClasses = "bg-amber-100 text-amber-700 border-amber-200";
+                } else if (r.status === "delivered") {
+                    badgeClasses = "bg-emerald-100 text-emerald-700 border-emerald-200";
+                } else {
+                    badgeClasses = "bg-gray-100 text-gray-700 border-gray-200";
+                }
+
+                const div = document.createElement("button");
+                div.type = "button";
+                div.className =
+                    "w-full text-left mb-2 px-3 py-3 rounded-lg border transition-all flex flex-col gap-1 " +
+                    (isSelected
+                        ? "border-purple-500 bg-purple-50 shadow-sm"
+                        : "border-gray-200 bg-white hover:bg-gray-50");
+
+                div.onclick = () => onSelectRequest(r.id);
+
+                div.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex flex-col">
+              <h3 class="text-sm font-semibold text-gray-900 line-clamp-1">
+                ${r.items}
+              </h3>
+              <p class="text-[11px] text-gray-500 flex items-center gap-1 mt-0.5">
+                <i class="fa-solid fa-user-pen text-gray-400"></i>
+                <span class="font-medium">From:</span>
+                <span>${r.requested_by_name || "Unknown requester"}</span>
+              </p>
+              ${r.contact_name ? `
+              <p class="text-[11px] text-gray-500 flex items-center gap-1">
+                <i class="fa-solid fa-user-tie text-gray-400"></i>
+                <span class="font-medium">To:</span>
+                <span>${r.contact_name}</span>
+              </p>` : ""}
+            </div>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badgeClasses}">
+              ${r.status}
+            </span>
+          </div>
+          <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500">
+            <span>Total items: ${r.total_items}</span>
+            <span>${new Date(r.created_at).toLocaleDateString()}</span>
+          </div>
+        `;
+
+                listContainer.appendChild(div);
+            });
+        }
+
+        async function onSelectRequest(id) {
+            try {
+                const r = await apiFetch(`/package-requests/${id}`);
+                selectedRequest = r;
+                renderRequestList();
+                renderDetails();
+            } catch (err) {
+                console.error(err);
+                showNotification("Error loading request details", "error");
+            }
+        }
+
+        function renderDetails() {
+            const titleEl = document.getElementById("detailsTitle");
+            const metaEl = document.getElementById("detailsMeta");
+            const bodyEl = document.getElementById("detailsBody");
+
+            if (!selectedRequest) {
+                titleEl.textContent = "Select a package request";
+                metaEl.innerHTML = "";
+                bodyEl.innerHTML =
+                    '<p class="text-sm text-gray-500">Choose a request from the left panel.</p>';
+                updateOnWayButtonState();
+                return;
+            }
+
+            titleEl.textContent = "Request details";
+            metaEl.innerHTML = `
+        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <span class="flex items-center gap-1">
+            <i class="fa-solid fa-user-pen text-gray-400"></i>
+            <span class="font-medium">From:</span>
+            <span>${selectedRequest.requested_by_name || "Unknown requester"}</span>
+          </span>
+          ${selectedRequest.contact_name ? `
+          <span class="flex items-center gap-1">
+            <i class="fa-solid fa-user-tie text-gray-400"></i>
+            <span class="font-medium">To (Instructor):</span>
+            <span>${selectedRequest.contact_name}</span>
+          </span>` : ""}
+          <span class="flex items-center gap-1">
+            <i class="fa-solid fa-location-dot text-gray-400"></i>
+            ${selectedRequest.location || "No location"}
+          </span>
+          ${selectedRequest.contact_phone ? `
+            <span class="flex items-center gap-1">
+              <i class="fa-solid fa-phone text-gray-400"></i>
+              ${selectedRequest.contact_phone}
+            </span>` : ""}
+          ${selectedRequest.url_location ? `
+            <a href="${selectedRequest.url_location}" target="_blank"
+               class="flex items-center gap-1 text-purple-600 hover:underline">
+              <i class="fa-solid fa-map"></i>
+              Map link
+            </a>` : ""}
+        </div>
+      `;
+
+            const checklistItems = buildChecklistItems(selectedRequest.items || "");
+
+            const checklistHtml = checklistItems.length
+                ? `
+        <div class="space-y-2">
+          ${checklistItems
+                    .map(
+                        (text, idx) => `
+              <label class="flex items-start gap-2 text-sm text-gray-700">
+                <input type="checkbox"
+                       data-checklist-item
+                       class="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                <span>${text}</span>
+              </label>
+            `
+                    )
+                    .join("")}
+        </div>
+      `
+                : `
+        <p class="text-sm text-gray-500">
+          No structured items found. You can still mark this request as processed.
+        </p>
+      `;
+
+            bodyEl.innerHTML = `
+      <div class="space-y-4">
+        <div class="bg-white border border-gray-200 rounded-lg p-3">
+          <h3 class="text-xs font-semibold text-gray-600 uppercase mb-2 flex items-center gap-1">
+            <i class="fa-solid fa-box-open text-gray-400"></i>
+            Items Checklist
+          </h3>
+          <p class="text-[11px] text-gray-500 mb-2">
+            Tick each item once it is prepared in the package. All items must be checked before marking as "On way".
+          </p>
+          <div id="itemsChecklist" class="space-y-1 max-h-52 overflow-y-auto custom-scroll pr-1">
+            ${checklistHtml}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="bg-white border border-gray-200 rounded-lg p-3">
+            <p class="text-xs text-gray-500 mb-1">Status</p>
+            <p class="text-sm font-semibold capitalize">${selectedRequest.status}</p>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg p-3">
+            <p class="text-xs text-gray-500 mb-1">Timeline</p>
+            <p class="text-xs leading-relaxed">
+              Created: ${new Date(selectedRequest.created_at).toLocaleString()}<br/>
+              Sent: ${selectedRequest.sent_date
+                    ? new Date(selectedRequest.sent_date).toLocaleDateString()
+                    : "—"}<br/>
+              Delivered: ${selectedRequest.delivered_date
+                    ? new Date(selectedRequest.delivered_date).toLocaleDateString()
+                    : "—"}
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+
+            // Attach change listeners on checklist to control button state
+            const checklistCheckboxes = document.querySelectorAll("[data-checklist-item]");
+            checklistCheckboxes.forEach(cb => {
+                cb.addEventListener("change", updateOnWayButtonState);
+            });
+
+            updateOnWayButtonState();
+        }
+
+        // ---------- ACTIONS ----------
+        async function markOnWay() {
+            if (!selectedRequest) return;
+
+            try {
+                const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+                const updated = await apiFetch(
+                    `/package-requests/${selectedRequest.id}/status`,
+                    {
+                        method: "PATCH",
+                        body: JSON.stringify({
+                            status: "on_way",
+                            sent_date: today,
+                        }),
+                    }
+                );
+
+                selectedRequest = updated;
+                // Update in list array
+                const idx = requests.findIndex((r) => r.id === updated.id);
+                if (idx !== -1) requests[idx] = updated;
+
+                updateStatsUI();
+                renderRequestList();
+                renderDetails();
+                showNotification("Marked as 'On way'", "success");
+            } catch (err) {
+                console.error(err);
+                showNotification("Failed to update status", "error");
+            }
+        }
+
+        // ---- WS for live updates ----
+        function setupWebSocket() {
+            const userId = getUserId();
+            if (!userId) return;
+
+            const wsUrl = `${location.origin.replace("http", "ws")}/ws/${userId}`;
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => console.log("COO WS connected");
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === "package_request_created") {
+                        showNotification("New package request received");
+                        loadRequests();
+                    } else if (msg.type === "package_request_status") {
+                        loadRequests();
+                    }
+                } catch (err) {
+                    console.error("WS error:", err);
+                }
+            };
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            ensureAuth();
+            loadRequests();
+            setupWebSocket();
+
+            const overlay = document.getElementById("overlay");
+            if (overlay) overlay.addEventListener("click", toggleSidebar);
+        });
+    </script>
+</head>
+
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Mobile menu button -->
+    <div class="lg:hidden fixed top-4 left-4 z-50">
+        <button onclick="toggleSidebar()" class="p-2 rounded-md bg-purple-600 text-white">
+            <i class="fa-solid fa-bars"></i>
+        </button>
+    </div>
+
+    <!-- Sidebar Navigation -->
+    <aside id="sidebar"
+        class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col">
+        <!-- Logo -->
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex flex-col items-center justify-center gap-4">
+                <img src="SpacePointlogo.png" alt="SpacePoint Logo" class="h-24 w-auto">
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                    <i class="fa-solid fa-user text-purple-600"></i>
+                </div>
+                <div>
+                    <p id="sidebar-full-name" class="font-medium text-gray-900">COO User</p>
+                    <p class="text-xs text-gray-500">
+                        Role:
+                        <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nav -->
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="admin_dashboard.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-gauge-high w-5"></i>
+                <span>Dashboard</span>
+            </a>
+
+            <a href="coo_package_requests.html"
+                class="flex items-center gap-3 px-4 py-3 bg-purple-50 text-purple-700 rounded-lg font-semibold">
+                <i class="fa-solid fa-box-open w-5"></i>
+                <span>Package Requests</span>
+            </a>
+        </nav>
+
+        <!-- Logout -->
+        <div class="p-4 border-t border-gray-200">
+            <button onclick="logout()"
+                class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                <i class="fa-solid fa-right-from-bracket w-5"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col lg:ml-0 min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">COO – Package Requests</h1>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Review missing items requests, check the items, and mark packages as sent.
+                    </p>
+                </div>
+                <div class="hidden lg:flex items-center gap-3">
+                    <span class="text-sm text-gray-500">Role:</span>
+                    <span id="user-role"
+                        class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold capitalize"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats -->
+        <section class="px-6 pt-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">Pending</p>
+                        <p id="statPending" class="mt-1 text-2xl font-bold text-red-600">0</p>
+                        <p class="text-[11px] text-gray-400 mt-1">Requests waiting to be prepared</p>
+                    </div>
+                    <div class="p-3 rounded-full bg-red-50 text-red-600">
+                        <i class="fa-solid fa-circle-exclamation"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">On way</p>
+                        <p id="statOnWay" class="mt-1 text-2xl font-bold text-amber-600">0</p>
+                        <p class="text-[11px] text-gray-400 mt-1">Packages currently in transit</p>
+                    </div>
+                    <div class="p-3 rounded-full bg-amber-50 text-amber-600">
+                        <i class="fa-solid fa-truck"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">Delivered</p>
+                        <p id="statDelivered" class="mt-1 text-2xl font-bold text-emerald-600">0</p>
+                        <p class="text-[11px] text-gray-400 mt-1">Requests fully completed</p>
+                    </div>
+                    <div class="p-3 rounded-full bg-emerald-50 text-emerald-600">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Content -->
+        <section class="flex-1 p-6 pt-2">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- LEFT: Requests list -->
+                <div class="lg:col-span-1 flex flex-col gap-4">
+                    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-4 flex flex-col h-[520px]">
+                        <div class="flex items-center justify-between mb-3">
+                            <h2 class="text-sm font-semibold text-gray-8
+00 flex items-center gap-2">
+                                <i class="fa-solid fa-list-ul text-gray-400"></i>
+                                Package Requests
+                            </h2>
+                        </div>
+
+                        <div id="requestsList" class="flex-1 overflow-y-auto custom-scroll pr-1 text-sm">
+                            <!-- Filled by JS -->
+                        </div>
+                        <p id="emptyListState" class="text-xs text-gray-400 mt-2"></p>
+                    </div>
+                </div>
+
+                <!-- RIGHT: Details -->
+                <div class="lg:col-span-2 flex flex-col bg-white border border-gray-200 rounded-xl shadow-sm h-[520px]">
+                    <!-- Details header -->
+                    <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                        <div>
+                            <h2 id="detailsTitle" class="text-sm font-semibold text-gray-900">
+                                Select a package request
+                            </h2>
+                            <div id="detailsMeta" class="mt-1 text-xs text-gray-500 flex items-center flex-wrap">
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button id="markOnWayBtn" onclick="markOnWay()"
+                                class="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                disabled>
+                                <i class="fa-solid fa-truck mr-2"></i>
+                                Mark as On way
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Details body -->
+                    <div id="detailsBody" class="flex-1 px-4 py-3 overflow-y-auto custom-scroll bg-gray-50 text-sm">
+                        <p class="text-sm text-gray-500">
+                            Choose a package request from the left panel.
+                        </p>
+                    </div>
+
+                    <!-- Footer note -->
+                    <div class="border-t border-gray-200 px-4 py-3 bg-gray-50">
+                        <p id="statusInfo" class="text-[11px] text-gray-400">
+                            Select a request, review the checklist, then mark it as "On way" once the package is ready.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden"></div>
+</body>
+
+</html>

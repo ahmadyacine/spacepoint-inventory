@@ -15,10 +15,10 @@ def list_components(
 
     cursor.execute(
         """
-        SELECT id, name, category, image_url, total_quantity, created_at, updated_at
+        SELECT id, name, category, image_url, tag, total_quantity, created_at, updated_at
         FROM components
         ORDER BY name;
-        """
+        """     
     )
     rows = cursor.fetchall()
     cursor.close()
@@ -30,6 +30,7 @@ def list_components(
             name=row["name"],
             category=row["category"],
             image_url=row["image_url"],
+            tag=row["tag"],
             total_quantity=row["total_quantity"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -48,14 +49,15 @@ def create_component(
 
     cursor.execute(
         """
-        INSERT INTO components (name, category, image_url, total_quantity)
-        VALUES (%s, %s, %s, %s)
-        RETURNING id, name, category, image_url, total_quantity, created_at, updated_at;
+        INSERT INTO components (name, category, image_url, tag, total_quantity)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id, name, category, image_url, tag, total_quantity, created_at, updated_at;
         """,
         (
             component.name,
             component.category,
             component.image_url,
+            component.tag,
             component.initial_quantity,
         ),
     )
@@ -113,18 +115,21 @@ def update_component(
     new_name = payload.name or row["name"]
     new_category = payload.category or row["category"]
     new_image_url = payload.image_url if payload.image_url is not None else row["image_url"]
+    new_tag = payload.tag if payload.tag is not None else row["tag"]
 
-    cursor.execute(
+
+    cursor.execute( 
         """
         UPDATE components
         SET name = %s,
             category = %s,
             image_url = %s,
+            tag = %s,
             updated_at = NOW()
         WHERE id = %s
-        RETURNING id, name, category, image_url, total_quantity, created_at, updated_at;
+        RETURNING id, name, category, image_url, tag, total_quantity, created_at, updated_at;
         """,
-        (new_name, new_category, new_image_url, component_id),
+        (new_name, new_category, new_image_url, new_tag, component_id),
     )
 
     row = cursor.fetchone()
@@ -137,10 +142,12 @@ def update_component(
         name=row["name"],
         category=row["category"],
         image_url=row["image_url"],
+        tag=row["tag"],        # ✅ FIX
         total_quantity=row["total_quantity"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
 
 
 @router.post("/{component_id}/adjust_quantity", response_model=ComponentOut)
@@ -179,7 +186,7 @@ def adjust_quantity(
         SET total_quantity = %s,
             updated_at = NOW()
         WHERE id = %s
-        RETURNING id, name, category, image_url, total_quantity, created_at, updated_at;
+        RETURNING id, name, category, image_url, tag, total_quantity, created_at, updated_at;
         """,
         (new_qty, component_id),
     )
@@ -204,13 +211,14 @@ def adjust_quantity(
     conn.close()
 
     return ComponentOut(
-        id=updated["id"],
-        name=updated["name"],
-        category=updated["category"],
-        image_url=updated["image_url"],
-        total_quantity=updated["total_quantity"],
-        created_at=updated["created_at"],
-        updated_at=updated["updated_at"],
+        id=row["id"],
+        name=row["name"],
+        category=row["category"],
+        image_url=row["image_url"],
+        tag=row["tag"],        # ✅ FIX
+        total_quantity=row["total_quantity"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 

@@ -52,20 +52,26 @@
             const token = getToken();
             const role = getRole();
 
-            console.log('🔐 Auth Debug:', {
-                token: token ? 'exists' : 'missing',
-                role: role || 'not set'
-            });
+            // console.log('🔐 Auth Debug:', {
+            //     token: token ? 'exists' : 'missing',
+            //     role: role || 'not set'
+            // });
 
             if (!token) {
-                console.log('No token found, redirecting to login');
+                // console.log('No token found, redirecting to login');
                 window.location.href = "login.html";
                 return;
             }
 
+            // Hide user management features for non-admin users
+            if (role !== "admin") {
+                const userElements = document.querySelectorAll('[data-admin-only]');
+                userElements.forEach(el => el.style.display = 'none');
+            }
+
             const allowedRoles = ["admin", "operations", "instructor"];
             if (role && !allowedRoles.includes(role)) {
-                console.log('Invalid role, redirecting to login');
+                // console.log('Invalid role, redirecting to login');
                 window.location.href = "login.html";
                 return;
             }
@@ -714,6 +720,17 @@ SpacePoint Team`;
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                 <i class="fa-solid fa-receipt w-5"></i>
                 <span>Generate Receipt</span>
+            </a>
+            <!-- New Refill Dashboard item -->
+            <a href="cubesats_refill.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-warehouse w-5"></i>
+                <span>Refill Dashboard</span>
+            </a>
+            <a href="reports_admin.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-flag w-5"></i>
+                <span>Reports</span>
             </a>
             <a href="users.html" data-admin-only
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">

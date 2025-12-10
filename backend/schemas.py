@@ -82,6 +82,8 @@ class CubesatOut(BaseModel):
     delivered_date: Optional[date]
     instructor_id: Optional[int]
     instructor_name: Optional[str] = None
+    instructor_phone: Optional[str] = None      # 👈 NEW
+    instructor_location: Optional[str] = None   # 👈 NEW
 
     # Existing items
     structures: int
@@ -229,17 +231,20 @@ class ComponentBase(BaseModel):
 
 class ComponentCreate(ComponentBase):
     initial_quantity: int = Field(0, ge=0)
+    tag: Optional[str] = None
 
 class ComponentUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     category: Optional[Literal["sensor", "board", "tool", "other"]] = None
     image_url: Optional[str] = None
+    tag: Optional[str] = None
 
 class ComponentOut(ComponentBase):
     id: int
     total_quantity: int
     created_at: datetime
     updated_at: datetime
+    tag: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -247,3 +252,74 @@ class ComponentOut(ComponentBase):
 class ComponentAdjust(BaseModel):
     delta: int  # can be positive or negative
     reason: Optional[str] = None
+
+
+class ReportCreate(BaseModel):
+    title: str                # short summary
+    message: str              # first message / description
+    cubesat_id: Optional[int] = None   # optional link to a cubesat
+
+
+class ReportOut(BaseModel):
+    id: int
+    instructor_id: int
+    instructor_name: Optional[str] = None
+    title: str
+    status: str                # 'open', 'in_progress', 'resolved', 'closed'
+    cubesat_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReportMessageCreate(BaseModel):
+    message: str
+
+
+class ReportMessageOut(BaseModel):
+    id: int
+    report_id: int
+    sender_role: str           # 'instructor' or 'admin'
+    sender_user_id: int
+    message: str
+    created_at: datetime
+
+
+class ReportWithMessages(ReportOut):
+    messages: List[ReportMessageOut]
+
+
+class PackageRequestCreate(BaseModel):
+    # Who will receive the package / where
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    location: Optional[str] = None       # e.g. school / city
+    url_location: Optional[str] = None   # Google Maps link etc.
+
+    # Items
+    items: str                           # e.g. "4 EPS, 2 ADCS, 1 TEMP, 4 CDHS"
+    total_items: int                     # e.g. 11
+
+
+class PackageRequestOut(BaseModel):
+    id: int
+    requested_by: int
+    requested_by_name: Optional[str] = None
+
+    contact_name: Optional[str]
+    contact_phone: Optional[str]
+    location: Optional[str]
+    url_location: Optional[str]
+
+    items: str
+    total_items: int
+    status: str
+    sent_date: Optional[date]
+    delivered_date: Optional[date]
+    created_at: datetime
+    updated_at: datetime
+
+
+class PackageRequestStatusUpdate(BaseModel):
+    status: Literal["on_way", "delivered", "cancelled"]
+    sent_date: Optional[date] = None
+    delivered_date: Optional[date] = None

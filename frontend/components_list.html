@@ -49,25 +49,35 @@
         let selectedComponentId = null;
 
         function ensureAuth() {
-            const token = sessionStorage.getItem("token");
-            const role = sessionStorage.getItem("role");
-            const username = sessionStorage.getItem("username");
+            const token = getToken();
+            const role = getRole();
 
-            if (!token || !role) {
+            if (!token || (role !== "admin" && role !== "operations")) {
                 window.location.href = "login.html";
                 return;
             }
 
-            currentUser = { role, username };
+            // Role badge (header + sidebar role)
+            const roleLabel = role; // أو حاب تخليها Capitalize/Pretty Name
+            const userRoleEl = document.getElementById("user-role");
+            const mobileRoleEl = document.getElementById("mobile-user-role");
 
-            if (role !== "admin" && role !== "operations") {
-                alert("Access denied. Admin/Operations only.");
-                window.location.href = "login.html";
-                return;
+            if (userRoleEl) userRoleEl.textContent = roleLabel;
+            if (mobileRoleEl) mobileRoleEl.textContent = roleLabel;
+
+            // Hide user management features for non-admin users
+            if (role !== "admin") {
+                const userElements = document.querySelectorAll('[data-admin-only]');
+                userElements.forEach(el => el.style.display = 'none');
             }
 
-            document.getElementById("user-role").textContent = role;
-            document.getElementById("mobile-user-role").textContent = role;
+            // 👇 هنا نستخدم full_name المخزّن في sessionStorage
+            const fullName = getFullName() || "Admin User";
+            const sidebarNameSpan = document.getElementById("sidebar-full-name");
+
+            if (sidebarNameSpan) {
+                sidebarNameSpan.textContent = fullName;
+            }
         }
 
         function toggleSidebar() {
@@ -153,10 +163,17 @@
                     </div>
                     <div class="flex-1">
                         <h3 class="text-sm font-semibold text-gray-900 truncate">${c.name}</h3>
-                        <p class="text-xs text-purple-700 inline-flex items-center gap-1 mt-1">
-                            <i class="fa-solid fa-tag text-[10px]"></i>
-                            <span class="capitalize">${c.category}</span>
+                        <p class="text-xs inline-flex items-center gap-2 mt-1">
+                            <span class="text-purple-700 flex items-center gap-1">
+                                <i class="fa-solid fa-layer-group text-[10px]"></i> ${c.category}
+                            </span>
+                            ${c.tag ? `
+                                <span class="text-gray-600 flex items-center gap-1">
+                                    <i class="fa-solid fa-tag text-[10px]"></i> ${c.tag}
+                                </span>
+                            ` : ""}
                         </p>
+
                     </div>
                     <div class="flex items-center justify-between mt-2">
                         <div>
@@ -228,9 +245,10 @@
             const category = document.getElementById('addCategory').value;
             const initial_quantity = parseInt(document.getElementById('addInitialQuantity').value || "0");
             const image_url = document.getElementById('addImageUrl').value.trim() || null;
+            const tag = document.getElementById('addTag').value.trim() || null;
 
             try {
-                const body = { name, category, initial_quantity, image_url };
+                const body = { name, category, initial_quantity, image_url, tag };
                 const created = await apiFetch("/components/", {
                     method: "POST",
                     body: JSON.stringify(body),
@@ -317,6 +335,7 @@
             document.getElementById("editName").value = c.name;
             document.getElementById("editImageUrl").value = c.image_url || "";
             document.getElementById("editCategory").value = c.category;
+            document.getElementById("editTag").value = c.tag || "";
 
             const modal = document.getElementById('editComponentModal');
             const content = document.getElementById('editModalContent');
@@ -344,11 +363,12 @@
             const name = document.getElementById("editName").value.trim();
             const category = document.getElementById("editCategory").value;
             const image_url = document.getElementById("editImageUrl").value.trim() || null;
+            const tag = document.getElementById("editTag").value.trim() || null;
 
             try {
                 const updated = await apiFetch(`/components/${selectedComponentId}`, {
                     method: "PUT",
-                    body: JSON.stringify({ name, category, image_url }),
+                    body: JSON.stringify({ name, category, image_url, tag }),
                 });
 
                 componentsData = componentsData.map(c => c.id === updated.id ? updated : c);
@@ -412,7 +432,7 @@
                     <i class="fa-solid fa-user text-purple-600"></i>
                 </div>
                 <div>
-                    <p class="font-medium text-gray-900">Admin User</p>
+                    <p id="sidebar-full-name" class="font-medium text-gray-900">Admin User</p>
                     <p class="text-xs text-gray-500">
                         Role:
                         <span class="font-semibold text-purple-600 capitalize" id="mobile-user-role">admin</span>
@@ -457,6 +477,17 @@
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                 <i class="fa-solid fa-receipt w-5"></i>
                 <span>Generate Receipt</span>
+            </a>
+            <!-- New Refill Dashboard item -->
+            <a href="cubesats_refill.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-warehouse w-5"></i>
+                <span>Refill Dashboard</span>
+            </a>
+            <a href="reports_admin.html"
+                class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fa-solid fa-flag w-5"></i>
+                <span>Reports</span>
             </a>
             <a href="users.html" data-admin-only
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
@@ -586,6 +617,12 @@
                                 class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
                         </div>
                     </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tag (optional)</label>
+                        <input id="addTag" type="text"
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                    </div>
+
                 </div>
                 <div class="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
                     <button type="button" onclick="closeAddModal()"
@@ -691,6 +728,11 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Image URL (optional)</label>
                         <input id="editImageUrl" type="url"
+                            class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tag (optional)</label>
+                        <input id="editTag" type="text"
                             class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 text-sm">
                     </div>
                 </div>

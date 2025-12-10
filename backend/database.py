@@ -61,12 +61,46 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
             full_name TEXT NOT NULL,
-            role TEXT NOT NULL CHECK (role IN ('admin', 'operations', 'instructor')),
+            role TEXT NOT NULL CHECK (role IN ('admin', 'operations', 'instructor', 'coo')),
             instructor_id INTEGER REFERENCES instructors(id),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
     )
+
+        # ---------- UPDATE USERS ROLE CHECK CONSTRAINT TO ADD 'coo' ----------
+
+    # Find existing CHECK constraint on users.role (if any)
+    cur.execute(
+        """
+        SELECT ccu.constraint_name
+        FROM information_schema.constraint_column_usage AS ccu
+        JOIN information_schema.table_constraints AS tc
+          ON ccu.constraint_name = tc.constraint_name
+         AND ccu.table_name = tc.table_name
+        WHERE ccu.table_name = 'users'
+          AND ccu.column_name = 'role'
+          AND tc.constraint_type = 'CHECK';
+        """
+    )
+    row = cur.fetchone()
+
+    if row:
+        constraint_name = row["constraint_name"]
+        # Drop old constraint
+        cur.execute(f'ALTER TABLE users DROP CONSTRAINT {constraint_name};')
+        print(f"Dropped old CHECK constraint on users.role: {constraint_name}")
+
+    # Add new constraint that includes 'coo'
+    cur.execute(
+        """
+        ALTER TABLE users
+        ADD CONSTRAINT users_role_check
+        CHECK (role IN ('admin', 'operations', 'instructor', 'coo'));
+        """
+    )
+    print("Updated users.role CHECK constraint to allow role = 'coo'")
+
 
     # Table cubesats  (OLD m3_* removed here)
     cur.execute(
@@ -175,6 +209,7 @@ def init_db():
             name TEXT NOT NULL,
             category TEXT NOT NULL CHECK (category IN ('sensor', 'board', 'tool', 'other')),
             image_url TEXT,
+            tag TEXT,
             total_quantity INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -195,6 +230,9 @@ def init_db():
         );
         """
     )
+
+
+    
 
 
     # Ensure extra columns on users/instructors/cubesats
@@ -315,7 +353,10 @@ def init_db():
     add_column_if_not_exists("cubesats", "m3_10_6mm_brass_standoff", "INTEGER DEFAULT 0")
     add_column_if_not_exists("cubesats", "m3_20_6mm_brass_standoff", "INTEGER DEFAULT 0")
 
-        # ---------- WORKSHOPS: LEAD INSTRUCTOR COLUMN ----------
+    # Add tag column to components
+    add_column_if_not_exists("components", "tag", "TEXT")
+
+    # ---------- WORKSHOPS: LEAD INSTRUCTOR COLUMN ----------
 
     add_column_if_not_exists(
         "workshops",
@@ -356,6 +397,68 @@ def init_db():
         ON CONFLICT (workshop_id, instructor_id) DO NOTHING;
         """
     )
+
+        # ---------- REPORTS (INSTRUCTOR ↔ ADMIN THREADS) ----------
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reports (
+            id SERIAL PRIMARY KEY,
+            instructorid INTEGER NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            cubesat_id INTEGER REFERENCES cubesats(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    # Ensure cubesat_id exists if table was created earlier without it
+    add_column_if_not_exists("reports", "cubesat_id", "INTEGER REFERENCES cubesats(id)")
+
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS report_messages (
+            id SERIAL PRIMARY KEY,
+            report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+            sender_role TEXT NOT NULL,          -- 'instructor' or 'admin'
+            sender_user_id INTEGER NOT NULL REFERENCES users(id),
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+
+        # ---------- PACKAGE REQUESTS (ADMIN/OPS -> COO) ----------
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS package_requests (
+            id SERIAL PRIMARY KEY,
+            requested_by INTEGER NOT NULL REFERENCES users(id),
+            -- Info about where to send
+            contact_name TEXT,
+            contact_phone TEXT,
+            location TEXT,
+            url_location TEXT,
+            -- Items requested (simple text for now, e.g. '4 EPS, 2 ADCS, 1 TEMP, 4 CDHS')
+            items TEXT NOT NULL,
+            total_items INTEGER NOT NULL DEFAULT 0,
+            -- Status: pending -> on_way -> delivered (or cancelled)
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'on_way', 'delivered', 'cancelled')),
+            sent_date DATE,
+            delivered_date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+
 
 
     conn.commit()

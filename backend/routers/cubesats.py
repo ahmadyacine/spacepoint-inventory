@@ -76,7 +76,9 @@ def row_to_cubesat(row) -> CubesatOut:
         location=row["location"],
         delivered_date=row["delivereddate"],
         instructor_id=row["instructorid"],
-        instructor_name=row.get("instructor_name"),  # 👈 NEW
+        instructor_name=row.get("instructor_name"),  
+        instructor_phone=row.get("instructor_phone"),           # 👈 NEW
+        instructor_location=row.get("instructor_location"),     # 👈 NEW
 
         # Existing items
         structures=row["structures"],
@@ -213,29 +215,37 @@ def list_cubesats(
     conn = get_connection()
     cursor = conn.cursor()
 
+    # in list_cubesats()
+
     if current_user["role"] == "instructor":
         cursor.execute(
             """
             SELECT 
                 c.*,
-                i.name AS instructor_name
-            FROM cubesats c
-            LEFT JOIN instructors i
-                ON c.instructorid = i.id
-            WHERE c.instructorid = %s
-              AND c.is_received = TRUE;
-            """,
-            (current_user["instructor_id"],),
-        )
+                i.name AS instructor_name,
+            i.phone AS instructor_phone,
+            i.location AS instructor_location
+        FROM cubesats c
+        LEFT JOIN instructors i
+            ON c.instructorid = i.id
+        WHERE c.instructorid = %s
+          AND c.is_received = TRUE
+        ORDER BY c.id DESC;
+        """,
+        (current_user["instructor_id"],),
+    )
     else:
         cursor.execute(
             """
             SELECT 
                 c.*,
-                i.name AS instructor_name
+                i.name AS instructor_name,
+                i.phone AS instructor_phone,
+                i.location AS instructor_location
             FROM cubesats c
             LEFT JOIN instructors i
-                ON c.instructorid = i.id;
+                ON c.instructorid = i.id
+            ORDER BY c.id DESC;
             """
         )
 
@@ -257,7 +267,9 @@ def get_cubesat(
         """
         SELECT 
             c.*,
-            i.name AS instructor_name
+            i.name AS instructor_name,
+            i.phone AS instructor_phone,
+            i.location AS instructor_location
         FROM cubesats c
         LEFT JOIN instructors i
             ON c.instructorid = i.id
