@@ -123,11 +123,20 @@ class CubesatOut(BaseModel):
 
 
 
-class UserCreate(BaseModel):
+class UserBase(BaseModel):
     username: str
-    password: str
     full_name: str
     role: str
+
+
+class UserCreate(UserBase):
+    # password required عند إنشاء المستخدم
+    password: str
+
+
+class UserUpdate(UserBase):
+    # password اختياري عند التحديث
+    password: Optional[str] = None
 
 
 class UserOut(BaseModel):

@@ -89,10 +89,12 @@ def create_component(
         name=row["name"],
         category=row["category"],
         image_url=row["image_url"],
+        tag=row["tag"],
         total_quantity=row["total_quantity"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
 
 
 @router.put("/{component_id}", response_model=ComponentOut)
@@ -211,14 +213,14 @@ def adjust_quantity(
     conn.close()
 
     return ComponentOut(
-        id=row["id"],
-        name=row["name"],
-        category=row["category"],
-        image_url=row["image_url"],
-        tag=row["tag"],        # ✅ FIX
-        total_quantity=row["total_quantity"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
+        id=updated["id"],
+        name=updated["name"],
+        category=updated["category"],
+        image_url=updated["image_url"],
+        tag=updated["tag"],
+        total_quantity=updated["total_quantity"],
+        created_at=updated["created_at"],
+        updated_at=updated["updated_at"],
     )
 
 

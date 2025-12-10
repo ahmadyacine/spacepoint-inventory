@@ -2,7 +2,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from ..database import get_connection
-from ..schemas import UserCreate, UserOut
+from ..schemas import UserCreate, UserUpdate, UserOut
 from ..deps import require_role
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -92,41 +92,50 @@ def get_user(
 @router.put("/{user_id}", response_model=UserOut)
 def update_user(
     user_id: int,
-    user: UserCreate,
+    user: UserUpdate,  # ✅ الحين يستخدم UserUpdate
     current_user=Depends(require_role("admin")),
 ):
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # Check if user exists
-    cursor.execute("SELECT id FROM users WHERE id = %s;", (user_id,))
-    if not cursor.fetchone():
+
+    # تأكد إن اليوزر موجود + جبنا الباسورد الحالي
+    cursor.execute("SELECT * FROM users WHERE id = %s;", (user_id,))
+    existing = cursor.fetchone()
+    if not existing:
         cursor.close()
         conn.close()
         raise HTTPException(status_code=404, detail="User not found")
-    
-    # Check if username already exists (excluding current user)
-    cursor.execute("SELECT id FROM users WHERE username = %s AND id != %s;", (user.username, user_id))
+
+    # تأكد إن ما في username مكرر (غير هذا اليوزر)
+    cursor.execute(
+        "SELECT id FROM users WHERE username = %s AND id != %s;",
+        (user.username, user_id),
+    )
     if cursor.fetchone():
         cursor.close()
         conn.close()
         raise HTTPException(status_code=400, detail="Username already exists")
-    
-    # Update user
+
+    # استخدم الباسورد الجديد لو أرسل، وإلا خله القديم
+    new_password = user.password if user.password else existing["password"]
+
     cursor.execute(
         """
         UPDATE users 
-        SET username = %s, password = %s, full_name = %s, role = %s
+        SET username = %s,
+            password = %s,
+            full_name = %s,
+            role = %s
         WHERE id = %s
-        RETURNING id, username, full_name, role, created_at
+        RETURNING id, username, full_name, role, created_at;
         """,
         (
             user.username,
-            user.password,
+            new_password,
             user.full_name,
             user.role,
-            user_id
-        )
+            user_id,
+        ),
     )
     row = cursor.fetchone()
     conn.commit()
