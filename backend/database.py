@@ -356,6 +356,9 @@ def init_db():
     # Add tag column to components
     add_column_if_not_exists("components", "tag", "TEXT")
 
+    # NEW: optional attachment link
+    add_column_if_not_exists("reports", "image_url", "TEXT")
+
     # ---------- WORKSHOPS: LEAD INSTRUCTOR COLUMN ----------
 
     add_column_if_not_exists(
@@ -416,6 +419,9 @@ def init_db():
 
     # Ensure cubesat_id exists if table was created earlier without it
     add_column_if_not_exists("reports", "cubesat_id", "INTEGER REFERENCES cubesats(id)")
+
+        # NEW: COO comment on package requests
+    add_column_if_not_exists("package_requests", "coo_comment", "TEXT")
 
 
     cur.execute(

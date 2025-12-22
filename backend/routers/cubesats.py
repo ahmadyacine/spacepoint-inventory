@@ -36,7 +36,7 @@ REQUIRED_COUNTS = {
     "magnetorquer": 1,
     "buck_converter_module": 1,
     "li_ion_battery": 1,
-    "pin_socket": 1,
+    "pin_socket": 4,
 
     # New mechanical
     "m3_screws": 20,

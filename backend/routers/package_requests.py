@@ -58,7 +58,8 @@ async def create_package_request(
             VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
             RETURNING id, requested_by, contact_name, contact_phone, location,
                       url_location, items, total_items, status,
-                      sent_date, delivered_date, created_at, updated_at;
+                      sent_date, delivered_date, coo_comment,  -- 👈 أضف coo_comment
+                      created_at, updated_at;
             """,
             (
                 current_user["id"],
@@ -70,6 +71,7 @@ async def create_package_request(
                 body.total_items,
             ),
         )
+
         r = cur.fetchone()
         conn.commit()
     finally:
@@ -89,7 +91,8 @@ async def create_package_request(
         status=r["status"],
         sent_date=r["sent_date"],
         delivered_date=r["delivered_date"],
-        created_at=r["created_at"],
+        coo_comment=r["coo_comment"],
+        created_at=r["created_at"], 
         updated_at=r["updated_at"],
     )
 
@@ -103,8 +106,9 @@ async def create_package_request(
             "location": out.location,
             "items": out.items,
             "total_items": out.total_items,
-            "status": out.status,
+            "status": out.status,   
             "created_at": out.created_at.isoformat(),
+            "coo_comment": out.coo_comment,
         },
     }
     await _notify_coos(payload)
@@ -164,6 +168,7 @@ async def list_package_requests(
             status=r["status"],
             sent_date=r["sent_date"],
             delivered_date=r["delivered_date"],
+            coo_comment=r["coo_comment"],
             created_at=r["created_at"],
             updated_at=r["updated_at"],
         )
@@ -204,8 +209,9 @@ async def list_my_requests(
             items=r["items"],
             total_items=r["total_items"],
             status=r["status"],
-            sent_date=r["sent_date"],
+            sent_date=r["sent_date"],   
             delivered_date=r["delivered_date"],
+            coo_comment=r["coo_comment"],
             created_at=r["created_at"],
             updated_at=r["updated_at"],
         )
@@ -256,7 +262,8 @@ async def get_package_request(
         status=r["status"],
         sent_date=r["sent_date"],
         delivered_date=r["delivered_date"],
-        created_at=r["created_at"],
+        coo_comment=r["coo_comment"],
+        created_at=r["created_at"], 
         updated_at=r["updated_at"],
     )
 
@@ -268,8 +275,8 @@ async def update_package_request_status(
     current_user = Depends(require_role("admin", "operations", "coo")),
 ):
     """
-    - COO: typically sets status to 'on_way' (with sent_date)
-    - Admin/operations: confirms 'delivered' (with delivered_date)
+    - COO: عادة يحدد status = 'on_way' + sent_date + coo_comment (اختياري)
+    - Admin/operations: يؤكد 'delivered' (مع delivered_date)
     """
     conn = get_connection()
     cur = conn.cursor()
@@ -280,22 +287,24 @@ async def update_package_request_status(
         if not r:
             raise HTTPException(status_code=404, detail="Package request not found")
 
-        # Business rules (simple version)
+        # Business rules
         if current_user["role"] == "coo":
-            # COO should not mark as delivered (up to you, you can relax this)
             if body.status == "delivered":
                 raise HTTPException(status_code=403, detail="COO cannot mark as delivered")
         else:
-            # admin/ops should not mark as on_way (only COO)
             if body.status == "on_way":
                 raise HTTPException(status_code=403, detail="Only COO can mark as on_way")
 
-            # admin/ops can only touch their own requests
             if r["requested_by"] != current_user["id"]:
                 raise HTTPException(status_code=403, detail="Not allowed")
 
         sent_date = body.sent_date if body.sent_date else r["sent_date"]
         delivered_date = body.delivered_date if body.delivered_date else r["delivered_date"]
+
+        # 👇 فقط الـ COO يقدر يعدل التعليق
+        coo_comment = r.get("coo_comment")
+        if current_user["role"] == "coo" and body.coo_comment is not None:
+            coo_comment = body.coo_comment
 
         cur.execute(
             """
@@ -303,13 +312,15 @@ async def update_package_request_status(
             SET status = %s,
                 sent_date = %s,
                 delivered_date = %s,
+                coo_comment = %s,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
             RETURNING id, requested_by, contact_name, contact_phone, location,
                       url_location, items, total_items, status,
-                      sent_date, delivered_date, created_at, updated_at;
+                      sent_date, delivered_date, coo_comment,
+                      created_at, updated_at;
             """,
-            (body.status, sent_date, delivered_date, request_id),
+            (body.status, sent_date, delivered_date, coo_comment, request_id),
         )
         updated = cur.fetchone()
         conn.commit()
@@ -320,7 +331,7 @@ async def update_package_request_status(
     out = PackageRequestOut(
         id=updated["id"],
         requested_by=updated["requested_by"],
-        requested_by_name=None,  # will not be used here
+        requested_by_name=None,  # مش مهم هنا
         contact_name=updated["contact_name"],
         contact_phone=updated["contact_phone"],
         location=updated["location"],
@@ -330,6 +341,7 @@ async def update_package_request_status(
         status=updated["status"],
         sent_date=updated["sent_date"],
         delivered_date=updated["delivered_date"],
+        coo_comment=updated["coo_comment"],
         created_at=updated["created_at"],
         updated_at=updated["updated_at"],
     )
@@ -341,14 +353,12 @@ async def update_package_request_status(
         "status": out.status,
         "sent_date": out.sent_date.isoformat() if out.sent_date else None,
         "delivered_date": out.delivered_date.isoformat() if out.delivered_date else None,
+        "coo_comment": out.coo_comment,  # 👈 مهم للطرف الثاني
     }
 
-    # Notify the other side
     if current_user["role"] == "coo":
-        # notify requester (admin/ops) that package is on way / cancelled
         await _notify_user(out.requested_by, payload)
     else:
-        # notify all COO that status changed (e.g. delivered)
         await _notify_coos(payload)
 
     return out
@@ -391,10 +401,12 @@ async def mark_received(
             WHERE id = %s
             RETURNING id, requested_by, contact_name, contact_phone, location,
                       url_location, items, total_items, status,
-                      sent_date, delivered_date, created_at, updated_at;
+                      sent_date, delivered_date, coo_comment,
+                      created_at, updated_at;
             """,
             (request_id,),
         )
+
         updated = cur.fetchone()
         conn.commit()
     finally:
@@ -414,6 +426,7 @@ async def mark_received(
         status=updated["status"],
         sent_date=updated["sent_date"],
         delivered_date=updated["delivered_date"],
+        coo_comment=updated["coo_comment"],
         created_at=updated["created_at"],
         updated_at=updated["updated_at"],
     )

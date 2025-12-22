@@ -267,6 +267,7 @@ class ReportCreate(BaseModel):
     title: str                # short summary
     message: str              # first message / description
     cubesat_id: Optional[int] = None   # optional link to a cubesat
+    image_url: Optional[str] = None
 
 
 class ReportOut(BaseModel):
@@ -276,6 +277,7 @@ class ReportOut(BaseModel):
     title: str
     status: str                # 'open', 'in_progress', 'resolved', 'closed'
     cubesat_id: Optional[int] = None
+    image_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -324,6 +326,7 @@ class PackageRequestOut(BaseModel):
     status: str
     sent_date: Optional[date]
     delivered_date: Optional[date]
+    coo_comment: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -332,3 +335,4 @@ class PackageRequestStatusUpdate(BaseModel):
     status: Literal["on_way", "delivered", "cancelled"]
     sent_date: Optional[date] = None
     delivered_date: Optional[date] = None
+    coo_comment: Optional[str] = None   

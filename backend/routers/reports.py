@@ -71,11 +71,17 @@ async def create_report(
         # 1) Insert report
         cur.execute(
             """
-            INSERT INTO reports (instructorid, title, status, cubesat_id)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, instructorid, title, status, cubesat_id, created_at, updated_at;
+            INSERT INTO reports (instructorid, title, status, cubesat_id, image_url)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, instructorid, title, status, cubesat_id, image_url, created_at, updated_at;
             """,
-            (current_user["instructor_id"], report.title, "open", report.cubesat_id),
+            (
+                current_user["instructor_id"],
+                report.title,
+                "open",
+                report.cubesat_id,
+                report.image_url,
+            ),
         )
         r = cur.fetchone()
 
@@ -104,6 +110,7 @@ async def create_report(
             "title": r["title"],
             "status": r["status"],
             "cubesat_id": r.get("cubesat_id"),
+            "image_url": r.get("image_url"),
             "created_at": r["created_at"].isoformat(),
             "updated_at": r["updated_at"].isoformat(),
         },
@@ -125,6 +132,7 @@ async def create_report(
         title=r["title"],
         status=r["status"],
         cubesat_id=r.get("cubesat_id"),
+        image_url=r.get("image_url"), 
         created_at=r["created_at"],
         updated_at=r["updated_at"],
     )
@@ -176,6 +184,7 @@ async def list_reports(
             title=r["title"],
             status=r["status"],
             cubesat_id=r.get("cubesat_id"),
+            image_url=r.get("image_url"),
             created_at=r["created_at"],
             updated_at=r["updated_at"],
         )
@@ -234,6 +243,7 @@ async def get_report(
         title=r["title"],
         status=r["status"],
         cubesat_id=r.get("cubesat_id"),
+        image_url=r.get("image_url"),
         created_at=r["created_at"],
         updated_at=r["updated_at"],
         messages=[

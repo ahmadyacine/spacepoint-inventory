@@ -45,6 +45,7 @@
     <script defer>
         let requests = [];
         let selectedRequest = null;
+        let statusFilter = "all";
 
         // ---------- AUTH ----------
         function ensureAuth() {
@@ -54,7 +55,6 @@
                 return;
             }
 
-            // Read directly from sessionStorage (no need for getFullName helper)
             const fullName = getFullName();
 
             const roleSpan = document.getElementById("user-role");
@@ -65,7 +65,6 @@
             if (mobileRoleSpan) mobileRoleSpan.textContent = role;
             if (nameSpan) nameSpan.textContent = fullName;
         }
-
 
         function toggleSidebar() {
             const sidebar = document.getElementById("sidebar");
@@ -172,7 +171,6 @@
             );
 
             if (!checkboxes.length) {
-                // No checklist generated – fallback to simple rule
                 btn.disabled = false;
                 statusInfo.textContent =
                     "You can mark as 'On way' when you send the package.";
@@ -216,14 +214,22 @@
             const emptyState = document.getElementById("emptyListState");
             listContainer.innerHTML = "";
 
-            if (!requests.length) {
-                emptyState.textContent = "No package requests yet.";
+            let visible = requests;
+            if (statusFilter !== "all") {
+                visible = requests.filter(r => r.status === statusFilter);
+            }
+
+            if (!visible.length) {
+                emptyState.textContent =
+                    statusFilter === "all"
+                        ? "No package requests yet."
+                        : "No requests with this status.";
                 return;
             } else {
                 emptyState.textContent = "";
             }
 
-            requests.forEach((r) => {
+            visible.forEach((r) => {
                 const isSelected = selectedRequest && selectedRequest.id === r.id;
 
                 let badgeClasses = "";
@@ -250,10 +256,13 @@
                 div.innerHTML = `
           <div class="flex items-center justify-between gap-2">
             <div class="flex flex-col">
-              <h3 class="text-sm font-semibold text-gray-900 line-clamp-1">
+              <p class="text-xs text-gray-500 mb-1">
+                <span class="font-medium">Request #${r.id}</span>
+              </p>
+              <h3 class="text-sm font-semibold text-gray-900 line-clamp-2">
                 ${r.items}
               </h3>
-              <p class="text-[11px] text-gray-500 flex items-center gap-1 mt-0.5">
+              <p class="text-[11px] text-gray-500 flex items-center gap-1 mt-1">
                 <i class="fa-solid fa-user-pen text-gray-400"></i>
                 <span class="font-medium">From:</span>
                 <span>${r.requested_by_name || "Unknown requester"}</span>
@@ -265,7 +274,8 @@
                 <span>${r.contact_name}</span>
               </p>` : ""}
             </div>
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badgeClasses}">
+            <span
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badgeClasses}">
               ${r.status}
             </span>
           </div>
@@ -283,6 +293,14 @@
             try {
                 const r = await apiFetch(`/package-requests/${id}`);
                 selectedRequest = r;
+
+                // If selected request not in current filter, adjust filter to its status
+                if (statusFilter !== "all" && selectedRequest.status !== statusFilter) {
+                    statusFilter = "all";
+                    const filterSelect = document.getElementById("statusFilter");
+                    if (filterSelect) filterSelect.value = "all";
+                }
+
                 renderRequestList();
                 renderDetails();
             } catch (err) {
@@ -300,105 +318,174 @@
                 titleEl.textContent = "Select a package request";
                 metaEl.innerHTML = "";
                 bodyEl.innerHTML =
-                    '<p class="text-sm text-gray-500">Choose a request from the left panel.</p>';
+                    '<p class="text-sm text-gray-500">Choose a request from the list to view full details.</p>';
                 updateOnWayButtonState();
                 return;
             }
 
-            titleEl.textContent = "Request details";
+            const statusLabel = selectedRequest.status === "on_way"
+                ? "On way"
+                : selectedRequest.status;
+
+            titleEl.textContent = `Request #${selectedRequest.id} – ${statusLabel}`;
             metaEl.innerHTML = `
-        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-          <span class="flex items-center gap-1">
-            <i class="fa-solid fa-user-pen text-gray-400"></i>
-            <span class="font-medium">From:</span>
-            <span>${selectedRequest.requested_by_name || "Unknown requester"}</span>
-          </span>
-          ${selectedRequest.contact_name ? `
-          <span class="flex items-center gap-1">
-            <i class="fa-solid fa-user-tie text-gray-400"></i>
-            <span class="font-medium">To (Instructor):</span>
-            <span>${selectedRequest.contact_name}</span>
-          </span>` : ""}
-          <span class="flex items-center gap-1">
-            <i class="fa-solid fa-location-dot text-gray-400"></i>
-            ${selectedRequest.location || "No location"}
-          </span>
-          ${selectedRequest.contact_phone ? `
-            <span class="flex items-center gap-1">
-              <i class="fa-solid fa-phone text-gray-400"></i>
-              ${selectedRequest.contact_phone}
-            </span>` : ""}
-          ${selectedRequest.url_location ? `
-            <a href="${selectedRequest.url_location}" target="_blank"
-               class="flex items-center gap-1 text-purple-600 hover:underline">
-              <i class="fa-solid fa-map"></i>
-              Map link
-            </a>` : ""}
-        </div>
+        <span class="text-xs text-gray-500">
+          Created: ${new Date(selectedRequest.created_at).toLocaleString()}
+        </span>
       `;
 
             const checklistItems = buildChecklistItems(selectedRequest.items || "");
 
-            const checklistHtml = checklistItems.length
-                ? `
-        <div class="space-y-2">
-          ${checklistItems
+            const itemsRows = checklistItems.length
+                ? checklistItems
                     .map(
                         (text, idx) => `
-              <label class="flex items-start gap-2 text-sm text-gray-700">
-                <input type="checkbox"
-                       data-checklist-item
-                       class="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
-                <span>${text}</span>
-              </label>
+              <tr class="border-b border-gray-100">
+                <td class="px-3 py-2 text-xs text-gray-500">${idx + 1}</td>
+                <td class="px-3 py-2 text-sm text-gray-800">${text}</td>
+                <td class="px-3 py-2 text-center">
+                  <input type="checkbox"
+                         data-checklist-item
+                         class="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                </td>
+              </tr>
             `
                     )
-                    .join("")}
-        </div>
-      `
+                    .join("")
                 : `
-        <p class="text-sm text-gray-500">
-          No structured items found. You can still mark this request as processed.
-        </p>
-      `;
+          <tr>
+            <td colspan="3" class="px-3 py-3 text-sm text-gray-500 text-center">
+              No structured items detected in this request.
+            </td>
+          </tr>
+        `;
 
             bodyEl.innerHTML = `
-      <div class="space-y-4">
-        <div class="bg-white border border-gray-200 rounded-lg p-3">
-          <h3 class="text-xs font-semibold text-gray-600 uppercase mb-2 flex items-center gap-1">
-            <i class="fa-solid fa-box-open text-gray-400"></i>
-            Items Checklist
-          </h3>
-          <p class="text-[11px] text-gray-500 mb-2">
-            Tick each item once it is prepared in the package. All items must be checked before marking as "On way".
-          </p>
-          <div id="itemsChecklist" class="space-y-1 max-h-52 overflow-y-auto custom-scroll pr-1">
-            ${checklistHtml}
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="space-y-4">
+          <!-- Summary table -->
           <div class="bg-white border border-gray-200 rounded-lg p-3">
-            <p class="text-xs text-gray-500 mb-1">Status</p>
-            <p class="text-sm font-semibold capitalize">${selectedRequest.status}</p>
-          </div>
-          <div class="bg-white border border-gray-200 rounded-lg p-3">
-            <p class="text-xs text-gray-500 mb-1">Timeline</p>
-            <p class="text-xs leading-relaxed">
-              Created: ${new Date(selectedRequest.created_at).toLocaleString()}<br/>
-              Sent: ${selectedRequest.sent_date
+            <h3 class="text-xs font-semibold text-gray-600 uppercase mb-2 flex items-center gap-1">
+              <i class="fa-solid fa-circle-info text-gray-400"></i>
+              Request Summary
+            </h3>
+            <table class="min-w-full text-sm">
+              <tbody>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left w-40">Request ID</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">#${selectedRequest.id}</td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Status</th>
+                  <td class="px-3 py-2 text-sm text-gray-800 capitalize">${statusLabel}</td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Requested by</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${selectedRequest.requested_by_name || "Unknown requester"}
+                  </td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Instructor / Receiver</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${selectedRequest.contact_name || "—"}
+                  </td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Location</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${selectedRequest.location || "—"}
+                  </td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Phone</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${selectedRequest.contact_phone || "—"}
+                  </td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Map link</th>
+                  <td class="px-3 py-2 text-sm text-purple-700">
+                    ${selectedRequest.url_location
+                    ? `<a href="${selectedRequest.url_location}" target="_blank" class="underline">Open in Maps</a>`
+                    : "—"
+                }
+                  </td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Total items</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${selectedRequest.total_items ?? "—"}
+                  </td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Created</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${new Date(selectedRequest.created_at).toLocaleString()}
+                  </td>
+                </tr>
+                <tr class="border-b border-gray-100">
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Sent</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${selectedRequest.sent_date
                     ? new Date(selectedRequest.sent_date).toLocaleDateString()
-                    : "—"}<br/>
-              Delivered: ${selectedRequest.delivered_date
+                    : "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <th class="px-3 py-2 text-xs text-gray-500 text-left">Delivered</th>
+                  <td class="px-3 py-2 text-sm text-gray-800">
+                    ${selectedRequest.delivered_date
                     ? new Date(selectedRequest.delivered_date).toLocaleDateString()
                     : "—"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Items table -->
+          <div class="bg-white border border-gray-200 rounded-lg p-3">
+            <h3 class="text-xs font-semibold text-gray-600 uppercase mb-2 flex items-center gap-1">
+              <i class="fa-solid fa-box-open text-gray-400"></i>
+              Items Checklist
+            </h3>
+            <p class="text-[11px] text-gray-500 mb-2">
+              Tick each item once it is prepared in the package. All items must be checked before marking as "On way".
+            </p>
+            <div class="max-h-56 overflow-y-auto custom-scroll">
+              <table class="min-w-full text-sm">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-3 py-2 text-[11px] text-gray-500 text-left w-10">#</th>
+                    <th class="px-3 py-2 text-[11px] text-gray-500 text-left">Item</th>
+                    <th class="px-3 py-2 text-[11px] text-gray-500 text-center w-24">Prepared</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemsRows}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Comment -->
+          <div class="bg-white border border-gray-200 rounded-lg p-3">
+            <h3 class="text-xs font-semibold text-gray-600 uppercase mb-2 flex items-center gap-1">
+              <i class="fa-solid fa-comment-dots text-gray-400"></i>
+              Comment to requester (optional)
+            </h3>
+            <textarea
+              id="cooComment"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500 min-h-[72px]"
+              placeholder="Example: FRAM is out of stock now, we sent TEMP only. FRAM will arrive next week.">${selectedRequest.coo_comment ? selectedRequest.coo_comment : ""
+                }</textarea>
+            <p class="mt-1 text-[11px] text-gray-400">
+              Use this to explain partial deliveries or expected timelines to the requester.
             </p>
           </div>
         </div>
-      </div>
-    `;
+      `;
 
-            // Attach change listeners on checklist to control button state
             const checklistCheckboxes = document.querySelectorAll("[data-checklist-item]");
             checklistCheckboxes.forEach(cb => {
                 cb.addEventListener("change", updateOnWayButtonState);
@@ -413,6 +500,9 @@
 
             try {
                 const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+                const cooCommentInput = document.getElementById("cooComment");
+                const coo_comment = cooCommentInput ? cooCommentInput.value.trim() : null;
+
                 const updated = await apiFetch(
                     `/package-requests/${selectedRequest.id}/status`,
                     {
@@ -420,12 +510,12 @@
                         body: JSON.stringify({
                             status: "on_way",
                             sent_date: today,
+                            coo_comment: coo_comment,
                         }),
                     }
                 );
 
                 selectedRequest = updated;
-                // Update in list array
                 const idx = requests.findIndex((r) => r.id === updated.id);
                 if (idx !== -1) requests[idx] = updated;
 
@@ -470,6 +560,24 @@
 
             const overlay = document.getElementById("overlay");
             if (overlay) overlay.addEventListener("click", toggleSidebar);
+
+            const filterSelect = document.getElementById("statusFilter");
+            if (filterSelect) {
+                filterSelect.addEventListener("change", (e) => {
+                    statusFilter = e.target.value;
+                    renderRequestList();
+
+                    // If current selected request not in this status, clear details
+                    if (
+                        selectedRequest &&
+                        statusFilter !== "all" &&
+                        selectedRequest.status !== statusFilter
+                    ) {
+                        selectedRequest = null;
+                        renderDetails();
+                    }
+                });
+            }
         });
     </script>
 </head>
@@ -596,12 +704,18 @@
                 <!-- LEFT: Requests list -->
                 <div class="lg:col-span-1 flex flex-col gap-4">
                     <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-4 flex flex-col h-[520px]">
-                        <div class="flex items-center justify-between mb-3">
-                            <h2 class="text-sm font-semibold text-gray-8
-00 flex items-center gap-2">
+                        <div class="flex items-center justify-between mb-3 gap-3">
+                            <h2 class="text-sm font-semibold text-gray-800 flex items-center gap-2">
                                 <i class="fa-solid fa-list-ul text-gray-400"></i>
                                 Package Requests
                             </h2>
+                            <select id="statusFilter"
+                                class="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white focus:ring-purple-500 focus:border-purple-500">
+                                <option value="all">All</option>
+                                <option value="pending">Pending</option>
+                                <option value="on_way">On way</option>
+                                <option value="delivered">Delivered</option>
+                            </select>
                         </div>
 
                         <div id="requestsList" class="flex-1 overflow-y-auto custom-scroll pr-1 text-sm">
@@ -635,14 +749,15 @@
                     <!-- Details body -->
                     <div id="detailsBody" class="flex-1 px-4 py-3 overflow-y-auto custom-scroll bg-gray-50 text-sm">
                         <p class="text-sm text-gray-500">
-                            Choose a package request from the left panel.
+                            Choose a package request from the list to view full details.
                         </p>
                     </div>
 
                     <!-- Footer note -->
                     <div class="border-t border-gray-200 px-4 py-3 bg-gray-50">
                         <p id="statusInfo" class="text-[11px] text-gray-400">
-                            Select a request, review the checklist, then mark it as "On way" once the package is ready.
+                            Select a request, review the checklist, then mark it as "On way" once the package
+                            is ready.
                         </p>
                     </div>
                 </div>

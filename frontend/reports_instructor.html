@@ -281,52 +281,56 @@
         // --------- CREATE NEW REPORT ---------
 
         async function submitNewReport() {
-            const titleInput = document.getElementById("newReportTitle");
-            const cubesatInput = document.getElementById("newReportCubesatId");
-            const messageInput = document.getElementById("newReportMessage");
+                const titleInput = document.getElementById("newReportTitle");
+                const cubesatInput = document.getElementById("newReportCubesatId");
+                const messageInput = document.getElementById("newReportMessage");
+                const imageUrlInput = document.getElementById("newReportImageUrl");
 
-            const title = titleInput.value.trim();
-            const message = messageInput.value.trim();
-            const cubesatIdRaw = cubesatInput.value.trim();
+                const title = titleInput.value.trim();
+                const message = messageInput.value.trim();
+                const cubesatIdRaw = cubesatInput.value.trim();
+                const image_url = imageUrlInput.value.trim() || null;
 
-            if (!title || !message) {
-                showNotification("Please enter a title and message", "error");
-                return;
-            }
-
-            let cubesat_id = null;
-            if (cubesatIdRaw) {
-                const parsed = parseInt(cubesatIdRaw, 10);
-                if (!isNaN(parsed)) cubesat_id = parsed;
-            }
-
-            try {
-                const newReport = await apiFetch("/reports/", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        title,
-                        message,
-                        cubesat_id,
-                    }),
-                });
-
-                showNotification("Report submitted successfully", "success");
-
-                // clear form
-                titleInput.value = "";
-                cubesatInput.value = "";
-                messageInput.value = "";
-
-                // reload list & select the new report
-                await loadReports();
-                if (newReport && newReport.id) {
-                    await onSelectReport(newReport.id);
+                if (!title || !message) {
+                    showNotification("Please enter a title and message", "error");
+                    return;
                 }
-            } catch (err) {
-                console.error(err);
-                showNotification("Failed to submit report", "error");
+
+                let cubesat_id = null;
+                if (cubesatIdRaw) {
+                    const parsed = parseInt(cubesatIdRaw, 10);
+                    if (!isNaN(parsed)) cubesat_id = parsed;
+                }
+
+                try {
+                    const newReport = await apiFetch("/reports/", {
+                        method: "POST",
+                        body: JSON.stringify({
+                            title,
+                            message,
+                            cubesat_id,
+                            image_url,           // NEW
+                        }),
+                    });
+
+                    showNotification("Report submitted successfully", "success");
+
+                    // clear form
+                    titleInput.value = "";
+                    cubesatInput.value = "";
+                    messageInput.value = "";
+                    imageUrlInput.value = "";
+
+                    await loadReports();
+                    if (newReport && newReport.id) {
+                        await onSelectReport(newReport.id);
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showNotification("Failed to submit report", "error");
+                }
             }
-        }
+
 
         // --------- SEND REPLY IN SELECTED REPORT ---------
 
@@ -381,24 +385,40 @@
                     const msg = JSON.parse(event.data);
                     console.log("WS message:", msg);
 
-                    // We only care about messages related to reports for instructor
                     if (msg.type === "report_message") {
-                        // If this is the currently open report, we can append +
-                        // re-fetch to keep status in sync.
                         showNotification("You received a new message on a report");
 
-                        // Simple approach: reload reports list.
-                        loadReports();
-
-                        // If the message belongs to the currently open report, re-fetch it.
-                        if (selectedReport && selectedReport.id === msg.report_id) {
-                            onSelectReport(msg.report_id);
+                        const r = reports.find(r => r.id === msg.report_id);
+                        if (r && msg.status) {
+                            r.status = msg.status;
                         }
+
+                        const cached = reportDetailsCache[msg.report_id];
+                        if (cached) {
+                            if (!cached.messages) cached.messages = [];
+                            cached.status = msg.status || cached.status;
+                            cached.messages.push({
+                                id: msg.message.id,
+                                report_id: msg.report_id,
+                                sender_role: msg.message.sender_role,
+                                sender_user_id: msg.message.sender_user_id,
+                                message: msg.message.message,
+                                created_at: msg.message.created_at,
+                            });
+
+                            if (selectedReport && selectedReport.id === msg.report_id) {
+                                selectedReport = cached;
+                                renderConversation();
+                            }
+                        }
+
+                        renderReportList();
                     }
                 } catch (err) {
                     console.error("Error processing WS message:", err);
                 }
             };
+
 
             ws.onclose = () => {
                 console.log("Reports WebSocket closed");
@@ -536,7 +556,13 @@
                         <input id="newReportCubesatId" type="number"
                             class="w-full mb-3 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500"
                             placeholder="e.g. 12" />
-
+                        <label class="block mb-2 text-xs font-medium text-gray-600">
+                            Attachment link (optional)
+                        </label>
+                        <input id="newReportImageUrl" type="url"
+                            class="w-full mb-3 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-purple-500 focus:border-purple-500"
+                            placeholder="Google Drive link or any image URL" />
+                        
                         <label class="block mb-2 text-xs font-medium text-gray-600">
                             Message / description
                         </label>
