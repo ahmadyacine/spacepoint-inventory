@@ -8,3 +8,4 @@ pydantic
 sqlalchemy
 pandas
 openpyxl
+qrcode
