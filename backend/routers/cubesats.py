@@ -6,14 +6,27 @@ import pandas as pd
 from ..database import get_connection
 from ..schemas import CubesatCreate, CubesatOut
 from ..deps import require_role
+import os
+import uuid
+import qrcode
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(dotenv_path=env_path)
+
 
 router = APIRouter(prefix="/cubesats", tags=["cubesats"])
+
+def get_frontend_base_url() -> str:
+    return os.getenv("FRONTEND_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+
 
 # Required counts for a "complete" CubeSat kit
 REQUIRED_COUNTS = {
     # Existing items
     "structures": 6,
-    "current_sensors": 2,
+    "current_sensors": 1,
     "temp_sensors": 1,
     "fram": 1,
     "sd_card": 1,
@@ -43,9 +56,25 @@ REQUIRED_COUNTS = {
     "m3_hex_nut": 4,
     "m3_9_6mm_brass_standoff": 4,
     "m3_10mm_brass_standoff": 4,
-    "m3_10_6mm_brass_standoff": 4,
-    "m3_20_6mm_brass_standoff": 12,
+    "m3_10_6mm_brass_standoff": 12,
+    "m3_20_6mm_brass_standoff": 8,
 }
+
+
+def make_qr_png(data: str) -> bytes:
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
 
 
 def calculate_missing_items(c: CubesatCreate) -> str:
@@ -115,6 +144,11 @@ def row_to_cubesat(row) -> CubesatOut:
         missing_items=row["missingitems"],
         is_received=bool(row.get("is_received", False)),
         received_date=row.get("received_date"),
+
+        public_token=row.get("public_token"),
+        qr_box_url=row.get("qr_box_url"),
+        qr_check_url=row.get("qr_check_url"),
+
     )
 
 
@@ -130,7 +164,6 @@ def create_cubesat(
     conn = get_connection()
     cursor = conn.cursor()
 
-    # INSERT with RETURNING for PostgreSQL
     cursor.execute(
         """
         INSERT INTO cubesats (
@@ -196,16 +229,44 @@ def create_cubesat(
             cubesat.m3_20_6mm_brass_standoff,
             is_complete,
             missing_str if missing_str else None,
-            cubesat.delivered_date,  # received_date initially same as delivered_date (or None)
+            cubesat.delivered_date,
         )
     )
 
     row = cursor.fetchone()
+
+    # -------- NEW: Generate token + 2 QR codes and store them --------
+    token = str(uuid.uuid4())
+
+    frontend = get_frontend_base_url()
+    box_url = f"{frontend}/cubesat_public.html?token={token}"
+    check_url = f"{frontend}/cubesat_check.html?token={token}"  
+
+    qr_box_png = make_qr_png(box_url)
+    qr_check_png = make_qr_png(check_url)
+
+    cursor.execute(
+        """
+        UPDATE cubesats
+        SET public_token=%s,
+            qr_box_png=%s,
+            qr_check_png=%s,
+            qr_box_url=%s,
+            qr_check_url=%s
+        WHERE id=%s
+        RETURNING *;
+        """,
+        (token, qr_box_png, qr_check_png, box_url, check_url, row["id"]),
+    )
+    row = cursor.fetchone()
+    # ---------------------------------------------------------------
+
     conn.commit()
     cursor.close()
     conn.close()
 
     return row_to_cubesat(row)
+
 
 
 @router.get("/", response_model=List[CubesatOut])
@@ -522,3 +583,50 @@ def export_cubesats_excel(
         raise HTTPException(
             status_code=500, detail=f"Error generating Excel file: {str(e)}"
         )
+
+@router.post("/{cubesat_id}/generate-qr", response_model=CubesatOut)
+def generate_qr_for_cubesat(
+    cubesat_id: int,
+    current_user=Depends(require_role("admin", "operations")),
+):
+    frontend = get_frontend_base_url()
+    print("USING FRONTEND_BASE_URL:", frontend) 
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM cubesats WHERE id=%s;", (cubesat_id,))
+    row = cursor.fetchone()
+    if not row:
+        cursor.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="Cubesat not found")
+
+    token = row["public_token"]
+    if not token:
+        token = str(uuid.uuid4())   
+    frontend = get_frontend_base_url()
+    box_url = f"{frontend}/cubesat_public.html?token={token}"
+    check_url = f"{frontend}/cubesat_check.html?token={token}"  
+
+    qr_box_png = make_qr_png(box_url)
+    qr_check_png = make_qr_png(check_url)
+
+    cursor.execute(
+        """
+        UPDATE cubesats
+        SET public_token=%s,
+            qr_box_png=%s,
+            qr_check_png=%s,
+            qr_box_url=%s,
+            qr_check_url=%s
+        WHERE id=%s
+        RETURNING *;
+        """,
+        (token, qr_box_png, qr_check_png, box_url, check_url, cubesat_id),
+    )
+    updated = cursor.fetchone()
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return row_to_cubesat(updated)

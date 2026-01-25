@@ -5,9 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CubeSat Check - SpacePoint</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
     <style>
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
@@ -31,37 +33,96 @@
             transition: transform 0.3s ease-in-out;
         }
     </style>
+
     <script src="js/api.js"></script>
+
     <script>
         let currentUser = null;
+        let publicToken = null;
+        let publicCubesat = null;
+        let isQrMode = false;
 
-        function ensureAuth() {
-            const token = sessionStorage.getItem("token");
-            const role = sessionStorage.getItem("role");
-            const username = sessionStorage.getItem("username");
-            const instructorId = sessionStorage.getItem("instructor_id");
+        // Default expected counts (fallback only; prefer backend required_counts)
+        const DEFAULT_COUNTS = {
+            structures: 6,
+            current_sensors: 2,
+            temp_sensors: 1,
+            fram: 1,
+            sd_card: 1,
+            reaction_wheel: 1,
+            mpu: 1,
+            gps: 1,
+            motor_driver: 1,
+            phillips_screwdriver: 1,
+            screw_gauge_3d: 1,
+            standoff_tool_3d: 1,
+            cdhs_board: 1,
+            eps_board: 1,
+            adcs_board: 1,
+            esp32_cam: 1,
+            esp32: 1,
+            magnetorquer: 1,
+            buck_converter_module: 1,
+            li_ion_battery: 1,
+            pin_socket: 4,
+            m3_screws: 20,
+            m3_hex_nut: 4,
+            m3_9_6mm_brass_standoff: 4,
+            m3_10mm_brass_standoff: 4,
+            m3_10_6mm_brass_standoff: 4,
+            m3_20_6mm_brass_standoff: 12
+        };
+
+        function qs(name) {
+            return new URLSearchParams(window.location.search).get(name);
+        }
+
+        function API_BASE_URL() {
+            return window.location.origin;
+        }
+
+        function safeInt(v) {
+            const n = parseInt(v, 10);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        // ---------- AUTH (Instructor only) ----------
+        function ensureAuthInstructorOrRedirect() {
+            const token = getToken();
+            const role = getRole();
+            const instructorId = sessionStorage.getItem("instructor_id") || sessionStorage.getItem("instructorId");
             const userId = sessionStorage.getItem("user_id");
 
-            if (!token || !role) {
-                window.location.href = "login.html";
-                return;
+            // Not logged in OR not instructor -> go login and come back
+            if (!token || role !== "instructor") {
+                // preserve the exact current URL (including ?token=...)
+                sessionStorage.setItem("redirect_to", window.location.pathname + window.location.search);
+                const next = encodeURIComponent(window.location.pathname + window.location.search);
+                window.location.href = `login.html?next=${next}`;
+                return false;
             }
 
             currentUser = {
-                role: role,
-                username: username,
+                role,
                 instructor_id: instructorId ? parseInt(instructorId) : null,
                 id: userId ? parseInt(userId) : null
             };
 
-            if (currentUser.role !== "instructor") {
-                alert("Access denied. Instructors only.");
+            if (!currentUser.instructor_id) {
+                alert("Instructor ID missing in session. Please login again.");
+                clearAuth();
+                sessionStorage.setItem("redirect_to", window.location.pathname + window.location.search);
                 window.location.href = "login.html";
-                return;
+                return false;
             }
 
-            document.getElementById("user-role").textContent = currentUser.role;
-            document.getElementById("mobile-user-role").textContent = currentUser.role;
+            // show role label
+            const userRoleEl = document.getElementById("user-role");
+            const mobileRoleEl = document.getElementById("mobile-user-role");
+            if (userRoleEl) userRoleEl.textContent = role;
+            if (mobileRoleEl) mobileRoleEl.textContent = role;
+
+            return true;
         }
 
         function logout() {
@@ -76,74 +137,35 @@
             overlay.classList.toggle('hidden');
         }
 
-        async function loadCubesats() {
-            const cubesatSelect = document.getElementById('cubesatSelect');
-            try {
-                const cubesats = await apiFetch('/cubesats/');
-                const myCubesats = cubesats.filter(c => c.instructor_id === currentUser.instructor_id);
-
-                cubesatSelect.innerHTML = '<option value="">Select a CubeSat...</option>' +
-                    myCubesats.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-            } catch (error) {
-                console.error('Error loading cubesats:', error);
-                cubesatSelect.innerHTML = '<option value="">Error loading CubeSats</option>';
-            }
-        }
-
-        // Default expected counts for each item
-        const DEFAULT_COUNTS = {
-            // Structure & mechanics
-            structures: 6,
-            reaction_wheel: 1,
-
-            // Electronics (sensors & storage)
-            current_sensors: 2,
-            temp_sensors: 1,
-            fram: 1,
-            sd_card: 1,
-            mpu: 1,
-            gps: 1,
-            motor_driver: 1,
-
-            // Boards
-            cdhs_board: 1,
-            eps_board: 1,
-            adcs_board: 1,
-
-            // ESP32 & modules
-            esp32_cam: 1,
-            esp32: 1,
-            magnetorquer: 1,
-            buck_converter_module: 1,
-            li_ion_battery: 1,
-            pin_socket: 4,
-
-            // Tools
-            phillips_screwdriver: 1,
-            screw_gauge_3d: 1,
-            standoff_tool_3d: 1,
-
-            // Screws & standoffs
-            m3_screws: 20,
-            m3_hex_nut: 4,
-            m3_9_6mm_brass_standoff: 4,
-            m3_10mm_brass_standoff: 4,
-            m3_10_6mm_brass_standoff: 4,
-            m3_20_6mm_brass_standoff: 12
-        };
-
-        function fillDefaults() {
-            for (const [key, value] of Object.entries(DEFAULT_COUNTS)) {
-                const input = document.querySelector(`input[name="${key}"]`);
-                if (input) {
-                    input.value = value;
-                }
-            }
-        }
-
+        // ---------- UI helpers ----------
         function clearAll() {
             const inputs = document.querySelectorAll('#checkForm input[type="number"]');
             inputs.forEach(i => i.value = "");
+        }
+
+        function fillDefaults(requiredCounts = DEFAULT_COUNTS) {
+            for (const [key, value] of Object.entries(requiredCounts)) {
+                const input = document.querySelector(`input[name="${key}"]`);
+                if (input) input.value = value;
+            }
+        }
+
+        function fillWithComponents(components) {
+            for (const [key, value] of Object.entries(components || {})) {
+                const input = document.querySelector(`input[name="${key}"]`);
+                if (input) input.value = (value ?? 0);
+            }
+        }
+
+        function computeMissingFromForm(dataObj, requiredCounts) {
+            const missing = [];
+            for (const [key, expected] of Object.entries(requiredCounts || DEFAULT_COUNTS)) {
+                const actual = Number(dataObj[key] ?? 0);
+                if (actual < expected) {
+                    missing.push(`${key}: missing ${expected - actual}`);
+                }
+            }
+            return missing.join("\n");
         }
 
         function showResult(result) {
@@ -160,17 +182,117 @@
             } else {
                 iconDiv.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4';
                 iconDiv.innerHTML = `<svg class="h-6 w-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`;
-                message.innerText = 'The following items are missing:\n\n' + result.missing_items;
                 title.innerText = 'Missing Items Detected';
+                message.innerText = 'The following items are missing:\n\n' + (result.missing_items || '—');
             }
 
             resultModal.classList.remove('hidden');
             resultModal.classList.add('flex');
         }
 
-        window.addEventListener("DOMContentLoaded", () => {
-            ensureAuth();
-            loadCubesats();
+        function closeResultModal() {
+            const resultModal = document.getElementById('resultModal');
+            resultModal.classList.add('hidden');
+            resultModal.classList.remove('flex');
+        }
+
+        // ---------- QR mode (auth required) ----------
+        async function initQrMode(token) {
+            isQrMode = true;
+
+            // hide cubesat selector (we already know which kit)
+            const selectorWrapper = document.getElementById("cubesatSelect")?.closest(".flex");
+            if (selectorWrapper) selectorWrapper.classList.add("hidden");
+
+            const checkForm = document.getElementById("checkForm");
+            checkForm.classList.remove("hidden");
+
+            // load cubesat details with PUBLIC endpoint (read-only)
+            const res = await fetch(`${API_BASE_URL()}/public/cubesats/${token}`);
+            if (!res.ok) {
+                alert("Invalid QR token or CubeSat not found.");
+                window.location.href = "instructor_dashboard.html";
+                return;
+            }
+            publicCubesat = await res.json();
+
+            // update header copy
+            const header = document.querySelector("header h1");
+            const sub = document.querySelector("header p");
+            if (header) header.textContent = `CubeSat Check — ${publicCubesat.name}`;
+            if (sub) sub.textContent = `Authenticated instructor checklist for ${publicCubesat.name} (ID #${publicCubesat.id}).`;
+
+            const requiredCounts = publicCubesat.required_counts || DEFAULT_COUNTS;
+
+            // prefill with ACTUAL kit counts from DB
+            fillWithComponents(publicCubesat.components);
+
+            // "Fill with expected" button uses requiredCounts
+            const fillBtn = document.getElementById("fillExpectedBtn");
+            if (fillBtn) fillBtn.onclick = () => fillDefaults(requiredCounts);
+
+            // SUBMIT using AUTH endpoint /session_logs/ (so it appears in admin logs)
+            checkForm.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                for (const k in data) data[k] = safeInt(data[k]);
+
+                const missing_items = computeMissingFromForm(data, requiredCounts);
+                const status = missing_items ? "missing" : "complete";
+
+                // Build payload for SessionLogCreate
+                const payload = {
+                    ...data,
+                    cubesat_id: publicCubesat.id,
+                    instructor_id: currentUser.instructor_id
+                };
+
+                try {
+                    const result = await apiFetch("/session_logs/", {
+                        method: "POST",
+                        body: JSON.stringify(payload)
+                    });
+
+                    // result from backend already has status/missing_items, but we can show our computed
+                    showResult({ status: result.status || status, missing_items: missing_items });
+                } catch (err) {
+                    alert("Error submitting check. Please try again.");
+                    console.error(err);
+                }
+            });
+        }
+
+        // ---------- Normal instructor mode (no QR) ----------
+        async function loadCubesatsInstructor() {
+            const cubesatSelect = document.getElementById('cubesatSelect');
+            try {
+                const cubesats = await apiFetch('/cubesats/');
+                const myCubesats = cubesats.filter(c => c.instructor_id === currentUser.instructor_id);
+
+                cubesatSelect.innerHTML = '<option value="">Select a CubeSat...</option>' +
+                    myCubesats.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            } catch (error) {
+                console.error('Error loading cubesats:', error);
+                cubesatSelect.innerHTML = '<option value="">Error loading CubeSats</option>';
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", async () => {
+            publicToken = qs("token");
+
+            // ✅ always require instructor auth (even in QR mode)
+            const ok = ensureAuthInstructorOrRedirect();
+            if (!ok) return;
+
+            if (publicToken) {
+                await initQrMode(publicToken);
+                return;
+            }
+
+            // normal mode
+            await loadCubesatsInstructor();
 
             const cubesatSelect = document.getElementById('cubesatSelect');
             const checkForm = document.getElementById('checkForm');
@@ -178,7 +300,7 @@
             cubesatSelect.addEventListener('change', (e) => {
                 if (e.target.value) {
                     checkForm.classList.remove('hidden');
-                    fillDefaults();
+                    fillDefaults(DEFAULT_COUNTS);
                 } else {
                     checkForm.classList.add('hidden');
                 }
@@ -186,12 +308,10 @@
 
             checkForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
+
                 const formData = new FormData(e.target);
                 const data = Object.fromEntries(formData.entries());
-
-                for (const key in data) {
-                    data[key] = parseInt(data[key]);
-                }
+                for (const key in data) data[key] = safeInt(data[key]);
 
                 data.cubesat_id = parseInt(cubesatSelect.value);
                 data.instructor_id = parseInt(currentUser.instructor_id);
@@ -201,7 +321,6 @@
                         method: 'POST',
                         body: JSON.stringify(data)
                     });
-
                     showResult(result);
                 } catch (error) {
                     alert('Error submitting check: ' + error.message);
@@ -222,13 +341,12 @@
     <!-- Sidebar Navigation -->
     <div id="sidebar"
         class="sidebar lg:translate-x-0 w-64 bg-white shadow-lg fixed lg:static h-full z-40 flex flex-col -translate-x-full lg:translate-x-0">
-        <!-- Logo and Brand -->
         <div class="p-6 border-b border-gray-200">
             <div class="flex flex-col items-center justify-center gap-4">
                 <img src="SpacePointlogo.png" alt="Logo" class="h-24 w-auto">
             </div>
         </div>
-        <!-- User Info -->
+
         <div class="p-4 border-b border-gray-200">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
@@ -236,13 +354,13 @@
                 </div>
                 <div>
                     <p class="font-medium text-gray-900">Instructor</p>
-                    <p class="text-xs text-gray-500">
-                        Role: <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
+                    <p class="text-xs text-gray-500">Role:
+                        <span id="mobile-user-role" class="font-semibold text-purple-600 capitalize"></span>
                     </p>
                 </div>
             </div>
         </div>
-        <!-- Main Navigation -->
+
         <nav class="flex-1 p-4 space-y-2">
             <a href="instructor_dashboard.html"
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
@@ -258,11 +376,10 @@
             </a>
             <a href="reports_instructor.html"
                 class="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                <i class="fa-solid fa-flag w-5"></i>
-                <span>Reports</span>
+                <i class="fa-solid fa-flag w-5"></i><span>Reports</span>
             </a>
         </nav>
-        <!-- Logout Section -->
+
         <div class="p-4 border-t border-gray-200">
             <button onclick="logout()"
                 class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
@@ -271,17 +388,14 @@
         </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col lg:ml-0 min-h-screen">
-        <!-- Header -->
+    <!-- Main -->
+    <div class="flex-1 flex flex-col min-h-screen">
         <header class="bg-white shadow-sm border-b border-gray-200">
             <div class="px-6 py-4">
                 <div class="flex items-center justify-between">
                     <div>
                         <h1 class="text-2xl font-bold text-gray-900">Post-Session Check</h1>
-                        <p class="text-sm text-gray-500 mt-1">
-                            Quickly verify your CubeSat inventory and report missing items after each session.
-                        </p>
+                        <p class="text-sm text-gray-500 mt-1">Verify CubeSat inventory and report missing items.</p>
                     </div>
                     <div class="flex items-center gap-4">
                         <span class="text-sm text-gray-500">Role:</span>
@@ -292,10 +406,10 @@
             </div>
         </header>
 
-        <!-- Content Area -->
         <div class="flex-1 p-6 space-y-8 max-w-5xl mx-auto w-full">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
-                <!-- CubeSat selector -->
+
+                <!-- selector (hidden in QR mode) -->
                 <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
                     <div class="flex-1">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Select CubeSat</label>
@@ -303,23 +417,12 @@
                             class="w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500">
                             <option value="">Loading CubeSats...</option>
                         </select>
-                        <p class="text-xs text-gray-500 mt-1">
-                            Choose the CubeSat you used in this session to start the checklist.
-                        </p>
-                    </div>
-                    <div class="hidden md:flex flex-col items-end text-xs text-gray-500">
-                        <span class="inline-flex items-center gap-2 mb-1">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Matches expected count
-                        </span>
-                        <span class="inline-flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full bg-amber-500"></span> Different from expected
-                        </span>
                     </div>
                 </div>
 
-                <!-- Form -->
+                <!-- form -->
                 <form id="checkForm" class="space-y-6 hidden">
-                    <!-- Top controls -->
+
                     <div
                         class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between rounded-lg bg-purple-50 px-4 py-3 border border-purple-100">
                         <div class="flex items-center gap-3">
@@ -329,9 +432,7 @@
                             </div>
                             <div>
                                 <p class="text-sm font-semibold text-purple-900">Session Checklist</p>
-                                <p class="text-xs text-purple-700">
-                                    You can auto-fill all items with expected counts, then just adjust anything missing.
-                                </p>
+                                <p class="text-xs text-purple-700">Scan QR → login → submit as instructor.</p>
                             </div>
                         </div>
                         <div class="flex gap-2 justify-end">
@@ -339,7 +440,7 @@
                                 class="px-3 py-1.5 text-xs border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50">
                                 Clear all
                             </button>
-                            <button type="button" onclick="fillDefaults()"
+                            <button id="fillExpectedBtn" type="button" onclick="fillDefaults()"
                                 class="px-3 py-1.5 text-xs rounded-lg bg-purple-600 text-white hover:bg-purple-700 shadow-sm">
                                 <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>
                                 Fill with expected
@@ -347,6 +448,11 @@
                         </div>
                     </div>
 
+                    <!-- (Keep your same tables/inputs exactly as you already have)
+               IMPORTANT: input name="..." must match REQUIRED_COUNTS keys
+               e.g. current_sensors, reaction_wheel, sd_card, motor_driver, etc. -->
+
+                    <!-- ... your existing sections/tables go here unchanged ... -->
                     <!-- Sections grid -->
                     <div class="space-y-6">
                         <!-- Structure & Mechanics -->
@@ -621,7 +727,7 @@
                                     </thead>
                                     <tbody>
                                         <tr class="border-t border-gray-100">
-                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">Phillips
+                                            <td class="px-4 py-2"><span class="font-medium text-gray-900">3D
                                                     Screwdriver</span></td>
                                             <td class="px-4 py-2 text-center text-gray-700">1</td>
                                             <td class="px-4 py-2 text-center">
@@ -718,7 +824,7 @@
                                         <tr class="border-t border-gray-100">
                                             <td class="px-4 py-2"><span class="font-medium text-gray-900">M3 10+6mm
                                                     Brass Standoffs</span></td>
-                                            <td class="px-4 py-2 text-center text-gray-700">4</td>
+                                            <td class="px-4 py-2 text-center text-gray-700">12</td>
                                             <td class="px-4 py-2 text-center">
                                                 <input type="number" name="m3_10_6mm_brass_standoff" required min="0"
                                                     class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
@@ -727,7 +833,7 @@
                                         <tr class="border-t border-gray-100">
                                             <td class="px-4 py-2"><span class="font-medium text-gray-900">M3 20+6mm
                                                     Brass Standoffs</span></td>
-                                            <td class="px-4 py-2 text-center text-gray-700">12</td>
+                                            <td class="px-4 py-2 text-center text-gray-700">8</td>
                                             <td class="px-4 py-2 text-center">
                                                 <input type="number" name="m3_20_6mm_brass_standoff" required min="0"
                                                     class="w-24 text-center rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm">
@@ -739,7 +845,6 @@
                         </section>
                     </div>
 
-                    <!-- Submit -->
                     <div class="flex justify-end pt-4 border-t border-gray-200">
                         <button type="submit"
                             class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-sm flex items-center gap-2">
@@ -752,26 +857,23 @@
         </div>
     </div>
 
-    <!-- Result Modal -->
+    <!-- Result modal -->
     <div id="resultModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
         <div class="bg-white rounded-xl max-w-md w-full mx-4 p-6 shadow-2xl">
             <div class="text-center mb-6">
-                <div id="resultIcon" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full mb-4">
-                    <!-- Icon injected by JS -->
-                </div>
+                <div id="resultIcon" class="mx-auto flex items-center justify-center h-12 w-12 rounded-full mb-4"></div>
                 <h3 id="resultTitle" class="text-lg font-medium text-gray-900"></h3>
                 <p id="resultMessage" class="text-sm text-gray-500 mt-2 whitespace-pre-line"></p>
             </div>
-            <div class="flex justify-center">
-                <button onclick="window.location.href='instructor_dashboard.html'"
-                    class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors">
-                    Back to Dashboard
+            <div class="flex justify-center gap-2">
+                <button onclick="closeResultModal()"
+                    class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                    Close
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Overlay for mobile sidebar -->
     <div id="overlay" class="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30 hidden" onclick="toggleSidebar()">
     </div>
 </body>

@@ -359,6 +359,13 @@ def init_db():
     # NEW: optional attachment link
     add_column_if_not_exists("reports", "image_url", "TEXT")
 
+    # --- QR / public scan fields ---
+    add_column_if_not_exists("cubesats", "public_token", "TEXT UNIQUE")
+    add_column_if_not_exists("cubesats", "qr_box_png", "BYTEA")
+    add_column_if_not_exists("cubesats", "qr_check_png", "BYTEA")
+    add_column_if_not_exists("cubesats", "qr_box_url", "TEXT")
+    add_column_if_not_exists("cubesats", "qr_check_url", "TEXT")    
+
     # ---------- WORKSHOPS: LEAD INSTRUCTOR COLUMN ----------
 
     add_column_if_not_exists(

@@ -23,6 +23,8 @@
             const username = document.getElementById("username").value.trim();
             const password = document.getElementById("password").value.trim();
             const errorEl = document.getElementById("error");
+            const next = new URLSearchParams(window.location.search).get("next");
+
             errorEl.textContent = "";
 
             try {
@@ -35,6 +37,10 @@
 
                 // Pass instructor_id and user_id to setAuth function
                 setAuth(data.token, data.role, data.username, data.instructor_id, data.id, data.full_name);
+                if (next) {
+                    window.location.href = decodeURIComponent(next);
+                    return;
+                }
 
                 console.log("Stored auth data:", {
                     token: sessionStorage.getItem("token"),
@@ -44,19 +50,25 @@
                     user_id: sessionStorage.getItem("user_id")
                 });
 
+                // ✅ If user came from a QR link, go back there after login
+                const redirectTo = sessionStorage.getItem("redirect_to");
+                if (redirectTo) {
+                    sessionStorage.removeItem("redirect_to");
+                    window.location.href = redirectTo;
+                    return;
+                }
+
+                // ✅ Normal login flow (no QR)
                 if (data.role === "admin" || data.role === "operations") {
-                    console.log("Redirecting to admin dashboard");
                     window.location.href = "admin_dashboard.html";
                 } else if (data.role === "instructor") {
-                    console.log("Redirecting to instructor dashboard");
                     window.location.href = "instructor_dashboard.html";
                 } else if (data.role === "coo") {
-                    console.log("Redirecting to COO dashboard");
                     window.location.href = "coo_package_requests.html";
                 } else {
-                    console.log("Unknown role, redirecting to login");
                     errorEl.textContent = "Unknown user role";
                 }
+
             } catch (err) {
                 console.error("Login error:", err);
                 errorEl.textContent = "Invalid username or password";

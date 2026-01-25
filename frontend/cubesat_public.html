@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CubeSat Box - Components</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        :root {
+            --sp-primary: #241134;
+            --sp-secondary: #653f84;
+        }
+
+        body {
+            overflow-x: hidden;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+    <header class="bg-white border-b border-gray-200">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 py-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center"
+                    style="background: rgba(36,17,52,0.08);">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor" style="color: var(--sp-primary);">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10m0 0l8-4m-8 4l-8-4" />
+                    </svg>
+                </div>
+                <div class="min-w-0">
+                    <h1 class="text-lg sm:text-2xl font-bold text-gray-900 truncate" id="title">
+                        CubeSat Box Components
+                    </h1>
+                    <p class="text-sm text-gray-500 mt-0.5" id="subtitle">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 py-6">
+        <!-- status card -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="p-3 rounded-lg bg-gray-50 border">
+                    <p class="text-xs text-gray-500">Status</p>
+                    <p class="font-semibold text-gray-900" id="status">—</p>
+                </div>
+                <div class="p-3 rounded-lg bg-gray-50 border">
+                    <p class="text-xs text-gray-500">Location</p>
+                    <p class="font-semibold text-gray-900" id="location">—</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- components -->
+        <div class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="p-4 sm:p-5 border-b border-gray-200">
+                <h2 class="text-base sm:text-lg font-bold text-gray-900">Components Inside the Box</h2>
+                <p class="text-sm text-gray-500 mt-1">This is the stored inventory for this CubeSat kit.</p>
+            </div>
+
+            <div class="p-4 sm:p-5">
+                <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <!-- injected cards -->
+                </div>
+            </div>
+        </div>
+
+        <!-- missing components -->
+        <div class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="p-4 sm:p-5 border-b border-gray-200">
+                <h2 class="text-base sm:text-lg font-bold text-gray-900">Missing Components</h2>
+                <p class="text-sm text-gray-500 mt-1">Calculated using SpacePoint required counts.</p>
+            </div>
+
+            <div class="p-4 sm:p-5">
+                <p id="missingEmpty" class="text-sm text-green-700 font-semibold hidden">
+                    ✅ No missing items — kit is complete.
+                </p>
+                <div id="missingGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+            </div>
+        </div>
+
+        <p class="text-xs text-gray-400 mt-4 text-center">
+            SpacePoint — Scan & Check System
+        </p>
+    </main>
+
+    <script>
+        const API_BASE = window.API_BASE || "http://localhost:8000";
+
+        const FIELD_LABELS = {
+            structures: "Structures",
+            current_sensors: "Current Sensors",
+            temp_sensors: "Temperature Sensors",
+            fram: "FRAM",
+            sd_card: "SD Card",
+            reaction_wheel: "Reaction Wheel",
+            mpu: "IMU (MPU)",
+            gps: "GPS",
+            motor_driver: "Motor Driver",
+            phillips_screwdriver: "Phillips Screwdriver",
+            screw_gauge_3d: "Screw Gauge (3D)",
+            standoff_tool_3d: "Standoff Tool (3D)",
+            cdhs_board: "CDHS Board",
+            eps_board: "EPS Board",
+            adcs_board: "ADCS Board",
+            esp32_cam: "ESP32-CAM",
+            esp32: "ESP32",
+            magnetorquer: "Magnetorquer",
+            buck_converter_module: "Buck Converter Module",
+            li_ion_battery: "Li-ion Battery",
+            pin_socket: "Pin Socket",
+            m3_screws: "M3 Screws",
+            m3_hex_nut: "M3 Hex Nut",
+            m3_9_6mm_brass_standoff: "M3 9.6mm Brass Standoff",
+            m3_10mm_brass_standoff: "M3 10mm Brass Standoff",
+            m3_10_6mm_brass_standoff: "M3 10.6mm Brass Standoff",
+            m3_20_6mm_brass_standoff: "M3 20.6mm Brass Standoff",
+        };
+
+        function qs(name) {
+            return new URLSearchParams(window.location.search).get(name);
+        }
+
+        function makeCard(label, value) {
+            const div = document.createElement("div");
+            div.className = "flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-200";
+            div.innerHTML = `
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-gray-900 truncate">${label}</p>
+        </div>
+        <div class="shrink-0">
+          <span class="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-full text-sm font-bold"
+                style="background: rgba(101,63,132,0.10); color: var(--sp-secondary);">
+            ${value ?? 0}
+          </span>
+        </div>
+      `;
+            return div;
+        }
+
+        function makeMissingCard(label, info) {
+            const div = document.createElement("div");
+            div.className = "flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-200";
+            div.innerHTML = `
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-900 truncate">${label}</p>
+          <p class="text-xs text-red-700">Required: ${info.required} • Found: ${info.actual}</p>
+        </div>
+        <div class="shrink-0">
+          <span class="px-2 py-1 rounded-full bg-red-100 text-red-700 font-bold">
+            -${info.missing}
+          </span>
+        </div>
+      `;
+            return div;
+        }
+
+        async function load() {
+            const token = qs("token");
+            if (!token) {
+                document.getElementById("subtitle").textContent = "Missing token.";
+                return;
+            }
+
+            const res = await fetch(`/public/cubesats/${token}`);
+            if (!res.ok) {
+                document.getElementById("subtitle").textContent = "Invalid QR / token.";
+                return;
+            }
+
+            const c = await res.json();
+
+            // header info
+            document.getElementById("title").textContent = c.name ? `CubeSat Box — ${c.name}` : "CubeSat Box";
+            document.getElementById("subtitle").textContent = `Kit ID #${c.id}`;
+            document.getElementById("status").textContent = c.status || "—";
+            document.getElementById("location").textContent = c.location || "—";
+
+            const grid = document.getElementById("grid");
+            grid.innerHTML = "";
+
+            // ✅ new API structure from backend: components + missing_components
+            const components = c.components || {};
+            const missing = c.missing_components || {};
+
+            Object.entries(components).forEach(([key, value]) => {
+                grid.appendChild(makeCard(FIELD_LABELS[key] || key.replace(/_/g, " "), value));
+            });
+
+            const missingGrid = document.getElementById("missingGrid");
+            const missingEmpty = document.getElementById("missingEmpty");
+            missingGrid.innerHTML = "";
+
+            if (Object.keys(missing).length === 0) {
+                missingEmpty.classList.remove("hidden");
+            } else {
+                missingEmpty.classList.add("hidden");
+                Object.entries(missing).forEach(([key, info]) => {
+                    missingGrid.appendChild(makeMissingCard(FIELD_LABELS[key] || key.replace(/_/g, " "), info));
+                });
+            }
+        }
+
+        load();
+    </script>
+</body>
+
+</html>

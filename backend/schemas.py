@@ -121,6 +121,11 @@ class CubesatOut(BaseModel):
     is_received: bool = False
     received_date: Optional[date] = None
 
+    # QR / public scan
+    public_token: Optional[str] = None
+    qr_box_url: Optional[str] = None
+    qr_check_url: Optional[str] = None
+
 
 
 class UserBase(BaseModel):

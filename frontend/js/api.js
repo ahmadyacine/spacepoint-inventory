@@ -84,7 +84,11 @@
 // }
 
 // frontend/js/api.js
-const API_BASE = ""; // Use relative path for production deployment
+const API_BASE =
+  (window.API_BASE && window.API_BASE.trim()) ||
+  (location.hostname === "localhost" || location.hostname === "127.0.0.1"
+    ? "http://127.0.0.1:8000"
+    : ""); // production: same-origin // Use relative path for production deployment
 
 function getToken() {
     return sessionStorage.getItem("token");
